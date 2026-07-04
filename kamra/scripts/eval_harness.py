@@ -236,6 +236,9 @@ def t12():
 
 def execute():
 	global RT, ROOM
+	# frappe.locale.get_locale_value crashes (UnboundLocalError) when no
+	# language is set on the session — true in bare CI consoles.
+	frappe.local.lang = frappe.local.lang or "en"
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
