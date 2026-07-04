@@ -69,6 +69,11 @@ class Reservation(Document):
 		self.discount_amount = q["discount"]
 
 	def after_insert(self):
+		# every booking gets a pre-arrival check-in link
+		self.db_set(
+			"precheckin_token", frappe.generate_hash(length=24),
+			update_modified=False,
+		)
 		if self.voucher:
 			frappe.db.sql(
 				"""UPDATE `tabDiscount Voucher`

@@ -544,7 +544,8 @@ def front_desk_snapshot(property: str | None = None, date: str | None = None):
 	res_fields = [
 		"name", "guest_name", "room_type", "room", "status", "source",
 		"check_in_date", "check_out_date", "nights", "adults", "children",
-		"special_requests", "channel",
+		"special_requests", "channel", "precheckin_status", "eta",
+		"precheckin_token",
 	]
 
 	arrivals = frappe.get_all(

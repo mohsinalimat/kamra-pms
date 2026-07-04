@@ -76,11 +76,31 @@ function ReservationList(props: {
                 {row.guest_name}
               </span>
               {sourceBadge(row)}
+              {row.precheckin_status === "Submitted" && (
+                <Badge tone="green">Pre-checked-in</Badge>
+              )}
             </div>
             <div className="mt-0.5 text-xs text-zinc-500">
               {row.room ? `Room ${row.room.split("-").pop()}` : "Unassigned"} ·{" "}
               {row.nights} night{row.nights === 1 ? "" : "s"} · {row.adults} ad
               {row.children ? ` + ${row.children} ch` : ""}
+              {row.eta && ` · ETA ${row.eta}`}
+              {row.status === "Confirmed" &&
+                row.precheckin_status !== "Submitted" &&
+                row.precheckin_token && (
+                  <button
+                    className="ml-2 font-medium text-brand-700 hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigator.clipboard.writeText(
+                        `${window.location.origin}/checkin/${row.precheckin_token}`,
+                      )
+                    }}
+                    title="Copy the guest's self check-in link"
+                  >
+                    copy check-in link
+                  </button>
+                )}
             </div>
           </div>
           {props.action(row)}

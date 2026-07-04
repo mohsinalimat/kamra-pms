@@ -5,6 +5,7 @@ import { CalendarView } from "./components/CalendarView"
 import { ResourceScreen } from "./components/ResourceScreen"
 import Billing from "./screens/Billing"
 import PublicBooking from "./screens/PublicBooking"
+import PublicCheckin from "./screens/PublicCheckin"
 import FolioView from "./screens/FolioView"
 import GuestJourney from "./screens/GuestJourney"
 import Guests from "./screens/Guests"
@@ -78,6 +79,8 @@ export default function App() {
           path="book/:checkin/:checkout?/:adults?/:children?"
           element={<PublicBooking />}
         />
+        {/* pre-arrival self check-in, tokenized per reservation */}
+        <Route path="checkin/:token" element={<PublicCheckin />} />
         <Route element={<AppShell />}>
           <Route index element={<Today />} />
           <Route path="calendar" element={<CalendarScreen />} />

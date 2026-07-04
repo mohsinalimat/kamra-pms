@@ -46,7 +46,12 @@
   "discount_amount",
   "auto_price",
   "sb_notes",
-  "special_requests"
+  "special_requests",
+  "sb_precheckin",
+  "precheckin_token",
+  "precheckin_status",
+  "precheckin_on",
+  "eta"
  ],
  "fields": [
   {
@@ -282,12 +287,44 @@
    "fieldname": "is_day_use",
    "fieldtype": "Check",
    "label": "Day Use"
+  },
+  {
+   "fieldname": "sb_precheckin",
+   "fieldtype": "Section Break",
+   "label": "Pre-arrival Check-in"
+  },
+  {
+   "fieldname": "precheckin_token",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Pre-checkin Token",
+   "no_copy": 1
+  },
+  {
+   "default": "Not Started",
+   "fieldname": "precheckin_status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Pre-checkin",
+   "options": "Not Started\nSubmitted\nVerified"
+  },
+  {
+   "fieldname": "precheckin_on",
+   "fieldtype": "Datetime",
+   "label": "Pre-checkin Submitted On",
+   "read_only": 1
+  },
+  {
+   "description": "Arrival time the guest told us, e.g. 14:30 or 'late night'",
+   "fieldname": "eta",
+   "fieldtype": "Data",
+   "label": "Guest ETA"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-04 19:20:50.997297",
+ "modified": "2026-07-04 20:02:58.540939",
  "modified_by": "Administrator",
  "module": "Kamra",
  "name": "Reservation",

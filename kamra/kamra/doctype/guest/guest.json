@@ -22,6 +22,8 @@
   "id_number",
   "column_break_b",
   "nationality",
+  "address_line",
+  "city",
   "guest_notes"
  ],
  "fields": [
@@ -113,12 +115,22 @@
    "fieldname": "blacklist_reason",
    "fieldtype": "Small Text",
    "label": "Blacklist Reason"
+  },
+  {
+   "fieldname": "address_line",
+   "fieldtype": "Data",
+   "label": "Address"
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Data",
+   "label": "City"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-04 19:20:51.086940",
+ "modified": "2026-07-04 20:02:58.739313",
  "modified_by": "Administrator",
  "module": "Kamra",
  "name": "Guest",

@@ -74,6 +74,9 @@ export interface ReservationRow {
   children: number
   special_requests: string | null
   channel: string | null
+  precheckin_status: "Not Started" | "Submitted" | "Verified" | null
+  eta: string | null
+  precheckin_token: string | null
 }
 
 export interface RoomRow {

@@ -98,6 +98,95 @@ def search_stay(property: str, check_in_date: str, check_out_date: str,
 	return results
 
 
+def _res_by_token(token: str):
+	if not token or len(token) < 20:
+		frappe.throw("Invalid link.")
+	name = frappe.db.get_value("Reservation", {"precheckin_token": token})
+	if not name:
+		frappe.throw("This check-in link is not valid anymore.")
+	return frappe.get_doc("Reservation", name)
+
+
+@frappe.whitelist(allow_guest=True)
+def precheckin_info(token: str):
+	"""Stay summary for the pre-arrival check-in page."""
+	res = _res_by_token(token)
+	if res.status not in ("Confirmed", "Checked In"):
+		frappe.throw("This booking is no longer active.")
+	prop = frappe.get_doc("Property", res.property)
+	guest = frappe.get_doc("Guest", res.guest)
+	return {
+		"property": {
+			"property_name": prop.property_name,
+			"logo_url": prop.get("logo_url"),
+			"city": prop.city,
+			"checkin_time": str(prop.checkin_time or ""),
+			"phone": prop.phone,
+		},
+		"stay": {
+			"reservation": res.name,
+			"room_type": res.room_type.split("-")[-1],
+			"check_in_date": str(res.check_in_date),
+			"check_out_date": str(res.check_out_date),
+			"nights": res.nights,
+			"adults": res.adults,
+			"children": res.children,
+			"status": res.precheckin_status,
+		},
+		"guest": {
+			"full_name": guest.full_name,
+			"phone": guest.phone,
+			"email": guest.email,
+			"id_type": guest.id_type,
+			"nationality": guest.nationality,
+		},
+	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=3600)
+def precheckin_submit(token: str, id_type: str, id_number: str,
+                      email: str = "", nationality: str = "",
+                      address_line: str = "", city: str = "",
+                      eta: str = "", special_requests: str = ""):
+	"""Guest completes pre-arrival check-in (PRD FR-20 v0 — details +
+	declaration; ID photo/KYC vendor integration comes later)."""
+	if not id_type or not id_number.strip():
+		frappe.throw("ID type and number are required.")
+	res = _res_by_token(token)
+	if res.precheckin_status == "Verified":
+		frappe.throw("Check-in details were already verified by the desk.")
+
+	frappe.db.set_value("Guest", res.guest, {
+		"id_type": id_type,
+		"id_number": id_number.strip(),
+		"email": email or None,
+		"nationality": nationality or None,
+		"address_line": address_line or None,
+		"city": city or None,
+	})
+	frappe.db.set_value("Reservation", res.name, {
+		"precheckin_status": "Submitted",
+		"precheckin_on": frappe.utils.now_datetime(),
+		"eta": eta or None,
+		"special_requests": special_requests or res.special_requests,
+	})
+
+	from kamra.savings import log_action
+	log_action(
+		action_type="self_checkin",
+		reference_doctype="Reservation",
+		reference_name=res.name,
+		property=res.property,
+		minutes_saved=8,
+		rationale="Guest completed pre-arrival check-in online",
+		agent_name="Self Check-in",
+		channel="API",
+	)
+	frappe.db.commit()
+	return {"ok": True, "reservation": res.name}
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=10, seconds=3600)
 def book(property: str, room_type: str, check_in_date: str,
