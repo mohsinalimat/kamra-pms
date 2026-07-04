@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  evals:
+    name: Backend eval harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: apps/kamra
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y redis-server mariadb-client
+          sudo service redis-server start
+          npm install -g yarn
+
+      - name: Configure MariaDB
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e "
+            SET GLOBAL character_set_server = 'utf8mb4';
+            SET GLOBAL collation_server = 'utf8mb4_unicode_ci';"
+
+      - name: Init bench
+        run: |
+          pip install frappe-bench
+          bench init --skip-redis-config-generation --skip-assets \
+            --frappe-branch version-16 frappe-bench
+          cd frappe-bench
+          bench set-config -g db_host 127.0.0.1
+          bench set-config -g redis_cache redis://127.0.0.1:6379
+          bench set-config -g redis_queue redis://127.0.0.1:6379
+          bench set-config -g redis_socketio redis://127.0.0.1:6379
+
+      - name: Install app & site
+        run: |
+          cd frappe-bench
+          bench get-app kamra "${GITHUB_WORKSPACE}/apps/kamra"
+          bench new-site test.localhost \
+            --mariadb-user-host-login-scope='%' \
+            --db-root-password root --admin-password admin
+          bench --site test.localhost install-app kamra
+          bench --site test.localhost set-config developer_mode 1
+
+      - name: Run eval harness
+        run: |
+          cd frappe-bench
+          printf 'from kamra.scripts.eval_harness import execute\nexecute()\nexit\n' \
+            | bench --site test.localhost console | tee eval.out
+          grep -q "12/12 passed" eval.out

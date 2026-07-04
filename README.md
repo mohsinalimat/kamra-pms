@@ -77,6 +77,18 @@ bench --site kamra.localhost execute kamra.scripts.seed_demo.execute
 bench --site kamra.localhost migrate
 ```
 
+## What works in v8 (self check-in + CI)
+
+- **Self check-in** (`/checkin/<token>`): every booking mints a private
+  pre-arrival link (auto + backfilled). Guest submits ID details, ETA,
+  address; arrivals show a **Pre-checked-in** badge + ETA, with a
+  copy-link button per arrival. Idempotent; invalid tokens rejected;
+  logs +8 min to the savings ledger. (ID photo/KYC vendor + e-sign later.)
+- **Eval harness**: `kamra/scripts/eval_harness.py` — 12 deterministic
+  checks over pricing, guards, folio math, SLA; transaction-rollback, no
+  data left behind. CI runs it on every push (`.github/workflows/ci.yml`)
+  along with a frontend typecheck+build job.
+
 ## What works in v7 (multi-property)
 
 - **Property switcher** in the header (shows when the user can access >1
