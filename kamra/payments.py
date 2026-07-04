@@ -34,36 +34,30 @@ def create_payment_link(folio_name: str) -> dict:
 		frappe.throw("Nothing due on this folio.")
 	settings = _settings(folio.property)
 	guest = frappe.get_doc("Guest", folio.guest)
-	amount_paise = int(round(float(folio.balance) * 100))
 
 	if settings.test_mode:
+		# local demo: fake link, settle via the webhook simulator
 		link_id = f"plink_TEST{frappe.generate_hash(length=10)}"
 		url = f"https://rzp.io/test/{link_id}"
 	else:
-		import requests
+		# production: route through the frappe/payments app — supports
+		# Razorpay today; Stripe/PayPal/Paytm/Braintree by configuring
+		# their Settings and switching `gateway` here.
+		from payments.utils import get_payment_gateway_controller
 
-		resp = requests.post(
-			RAZORPAY_API,
-			auth=(settings.key_id,
-			      settings.get_password("key_secret")),
-			json={
-				"amount": amount_paise,
-				"currency": "INR",
-				"description": f"Stay bill {folio.name}",
-				"customer": {
-					"name": guest.full_name,
-					"contact": guest.phone or "",
-					"email": guest.email or "",
-				},
-				"notify": {"sms": bool(guest.phone), "email": bool(guest.email)},
-				"notes": {"folio": folio.name, "property": folio.property},
-			},
-			timeout=20,
-		)
-		if not resp.ok:
-			frappe.throw(f"Razorpay error: {resp.text[:300]}")
-		data = resp.json()
-		link_id, url = data["id"], data["short_url"]
+		controller = get_payment_gateway_controller(settings.gateway)
+		url = controller.get_payment_url(**{
+			"amount": float(folio.balance),
+			"currency": "INR",
+			"title": f"Stay bill {folio.name}",
+			"description": f"{folio.guest_name} · {folio.reservation}",
+			"reference_doctype": "Folio",
+			"reference_docname": folio.name,
+			"payer_name": guest.full_name,
+			"payer_email": guest.email or "",
+			"order_id": folio.name,
+		})
+		link_id = folio.name
 
 	folio.db_set("payment_link_id", link_id, update_modified=False)
 	folio.db_set("payment_link_url", url, update_modified=False)

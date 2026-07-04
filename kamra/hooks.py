@@ -16,7 +16,7 @@ scheduler_events = {
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["payments"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
