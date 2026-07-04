@@ -15,12 +15,17 @@ import {
   companiesConfig,
   guardrailsConfig,
   housekeepingConfig,
+  lostFoundConfig,
   mealPlansConfig,
   ratePlansConfig,
   reservationsConfig,
   roomTypesConfig,
   roomsConfig,
   seasonsConfig,
+  shiftsConfig,
+  travelAgentsConfig,
+  venueBookingsConfig,
+  venuesConfig,
   vouchersConfig,
 } from "./screens/configs"
 
@@ -123,6 +128,26 @@ export default function App() {
           <Route
             path="companies"
             element={<ResourceScreen config={companiesConfig} />}
+          />
+          <Route
+            path="travel-agents"
+            element={<ResourceScreen config={travelAgentsConfig} />}
+          />
+          <Route
+            path="events"
+            element={<ResourceScreen config={venueBookingsConfig} />}
+          />
+          <Route
+            path="venues"
+            element={<ResourceScreen config={venuesConfig} />}
+          />
+          <Route
+            path="lost-found"
+            element={<ResourceScreen config={lostFoundConfig} />}
+          />
+          <Route
+            path="shifts"
+            element={<ResourceScreen config={shiftsConfig} />}
           />
           <Route path="tickets" element={<Tickets />} />
           <Route

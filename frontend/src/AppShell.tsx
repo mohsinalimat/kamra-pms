@@ -2,8 +2,13 @@ import { useEffect, useState } from "react"
 import {
   BadgePercent,
   BedDouble,
+  Briefcase,
   Building2,
   CalendarDays,
+  Clock,
+  Landmark,
+  PackageSearch,
+  PartyPopper,
   ClipboardList,
   DoorOpen,
   Home,
@@ -79,6 +84,15 @@ const NAV: NavGroup[] = [
       { to: "/seasons", label: "Seasons", icon: CalendarDays },
       { to: "/vouchers", label: "Vouchers", icon: BadgePercent },
       { to: "/meal-plans", label: "Meal Plans", icon: UtensilsCrossed },
+      { to: "/travel-agents", label: "Travel Agents", icon: Briefcase },
+    ],
+  },
+  {
+    label: "Events",
+    roles: ["Front Desk", "Revenue Manager", "System Manager", "Administrator"],
+    items: [
+      { to: "/events", label: "Event Bookings", icon: PartyPopper },
+      { to: "/venues", label: "Venues", icon: Landmark },
     ],
   },
   {
@@ -95,6 +109,8 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/tickets", label: "Tickets", icon: Ticket },
       { to: "/housekeeping", label: "Housekeeping", icon: ListChecks },
+      { to: "/lost-found", label: "Lost & Found", icon: PackageSearch },
+      { to: "/shifts", label: "Shifts", icon: Clock },
     ],
   },
 ]

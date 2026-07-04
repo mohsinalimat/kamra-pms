@@ -77,6 +77,20 @@ bench --site kamra.localhost execute kamra.scripts.seed_demo.execute
 bench --site kamra.localhost migrate
 ```
 
+## What works in v9 (eZee-parity long tail)
+
+- **Travel Agents** (Revenue menu): business sources with commission % —
+  commissions auto-compute on their bookings
+- **Booker vs guest**: reservations record who arranged the stay
+  (assistant / travel desk / family) separately from the staying guest,
+  with a contact-preference flag — VIP profiles stay clean
+- **Events**: Venues + Venue Bookings pipeline (enquiry → confirmed →
+  completed) with quotes and advances
+- **Multi-currency payments**: folio payments carry currency + fx amount +
+  exchange rate (ledger stays INR)
+- **Lost & Found** register and **Shift Handover** (cash count, handover
+  chain) under Ops
+
 ## What works in v8 (self check-in + CI)
 
 - **Self check-in** (`/checkin/<token>`): every booking mints a private

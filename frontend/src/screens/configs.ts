@@ -148,6 +148,127 @@ export const mealPlansConfig: ScreenConfig = {
   ],
 }
 
+export const travelAgentsConfig: ScreenConfig = {
+  doctype: "Travel Agent",
+  title: "Travel Agents",
+  description: "Business sources with commission tracking — commissions compute automatically on their bookings.",
+  columns: [
+    { field: "agent_name", label: "Agent" },
+    { field: "agent_type", label: "Type", badge: true },
+    { field: "commission_pct", label: "Commission %" },
+    { field: "contact_phone", label: "Phone" },
+  ],
+  form: [
+    { field: "agent_name", label: "Agent name", type: "data", required: true },
+    { field: "agent_type", label: "Type", type: "select", options: ["Travel Agent", "OTA", "Tour Operator", "Corporate Desk"] },
+    { field: "commission_pct", label: "Commission %", type: "float" },
+    { field: "contact_name", label: "Contact name", type: "data" },
+    { field: "contact_phone", label: "Contact phone", type: "data" },
+    { field: "contact_email", label: "Contact email", type: "data" },
+    { field: "disabled", label: "Disabled", type: "check" },
+  ],
+}
+
+export const venuesConfig: ScreenConfig = {
+  doctype: "Venue",
+  title: "Venues",
+  description: "Banquet halls, lawns, board rooms — enquiry-based event spaces.",
+  propertyScoped: true,
+  columns: [
+    { field: "venue_name", label: "Venue" },
+    { field: "capacity", label: "Capacity" },
+    { field: "base_price", label: "Indicative ₹" },
+  ],
+  form: [
+    { field: "venue_name", label: "Venue name", type: "data", required: true },
+    { field: "capacity", label: "Capacity (people)", type: "int" },
+    { field: "base_price", label: "Indicative price", type: "currency" },
+    { field: "amenities", label: "Amenities", type: "data" },
+    { field: "disabled", label: "Disabled", type: "check" },
+  ],
+}
+
+export const venueBookingsConfig: ScreenConfig = {
+  doctype: "Venue Booking",
+  title: "Events",
+  description: "Banquet & event pipeline: enquiry → confirmed → completed.",
+  propertyScoped: true,
+  orderBy: "event_date asc",
+  columns: [
+    { field: "name", label: "Ref" },
+    { field: "customer_name", label: "Customer" },
+    { field: "venue", label: "Venue" },
+    { field: "event_type", label: "Type", badge: true },
+    { field: "event_date", label: "Date" },
+    { field: "status", label: "Status", badge: true },
+    { field: "quoted_amount", label: "Quoted ₹" },
+  ],
+  form: [
+    { field: "venue", label: "Venue", type: "link", linkDoctype: "Venue", required: true },
+    { field: "event_type", label: "Event type", type: "select", options: ["Wedding", "Conference", "Birthday", "Corporate Offsite", "Other"] },
+    { field: "event_date", label: "Event date", type: "date", required: true },
+    { field: "customer_name", label: "Customer name", type: "data", required: true },
+    { field: "customer_phone", label: "Customer phone", type: "data" },
+    { field: "company", label: "Company", type: "link", linkDoctype: "Company" },
+    { field: "attendees", label: "Attendees", type: "int" },
+    { field: "quoted_amount", label: "Quoted amount", type: "currency" },
+    { field: "advance_received", label: "Advance received", type: "currency" },
+    { field: "status", label: "Status", type: "select", options: ["Enquiry", "Confirmed", "Completed", "Cancelled"] },
+    { field: "requirements", label: "Requirements", type: "data" },
+  ],
+}
+
+export const lostFoundConfig: ScreenConfig = {
+  doctype: "Lost And Found Item",
+  title: "Lost & Found",
+  description: "Items found on property; track storage and returns.",
+  propertyScoped: true,
+  orderBy: "found_on desc",
+  columns: [
+    { field: "name", label: "Ref" },
+    { field: "item_description", label: "Item" },
+    { field: "found_in_room", label: "Room" },
+    { field: "found_on", label: "Found" },
+    { field: "status", label: "Status", badge: true },
+  ],
+  form: [
+    { field: "item_description", label: "Item", type: "data", required: true },
+    { field: "found_in_room", label: "Found in room", type: "link", linkDoctype: "Room" },
+    { field: "found_on", label: "Found on", type: "date", required: true },
+    { field: "found_by", label: "Found by", type: "data" },
+    { field: "status", label: "Status", type: "select", options: ["In Storage", "Returned", "Disposed"] },
+    { field: "guest", label: "Guest (if known)", type: "link", linkDoctype: "Guest" },
+    { field: "returned_on", label: "Returned on", type: "date" },
+    { field: "notes", label: "Notes", type: "data" },
+  ],
+}
+
+export const shiftsConfig: ScreenConfig = {
+  doctype: "Shift Handover",
+  title: "Shift Handover",
+  description: "Cash count and follow-ups passed between shifts.",
+  propertyScoped: true,
+  orderBy: "shift_date desc",
+  columns: [
+    { field: "name", label: "Shift" },
+    { field: "shift_date", label: "Date" },
+    { field: "shift", label: "Slot", badge: true },
+    { field: "status", label: "Status", badge: true },
+    { field: "closing_cash", label: "Closing cash ₹" },
+  ],
+  form: [
+    { field: "shift", label: "Shift", type: "select", options: ["Morning", "Evening", "Night"], required: true },
+    { field: "shift_date", label: "Date", type: "date", required: true },
+    { field: "opening_cash", label: "Opening cash", type: "currency" },
+    { field: "cash_collected", label: "Cash collected", type: "currency" },
+    { field: "payouts", label: "Payouts", type: "currency" },
+    { field: "closing_cash", label: "Closing cash", type: "currency" },
+    { field: "handed_over_to", label: "Handed over to", type: "link", linkDoctype: "User" },
+    { field: "status", label: "Status", type: "select", options: ["Open", "Closed"] },
+    { field: "handover_notes", label: "Handover notes", type: "data" },
+  ],
+}
+
 export const guardrailsConfig: ScreenConfig = {
   doctype: "Rate Guardrail",
   title: "Rate Guardrails",

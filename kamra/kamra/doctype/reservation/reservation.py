@@ -67,6 +67,12 @@ class Reservation(Document):
 		self.tax_amount = q["tax_amount"]
 		self.amount_after_tax = q["amount_after_tax"]
 		self.discount_amount = q["discount"]
+		if getattr(self, "travel_agent", None):
+			pct = frappe.db.get_value(
+				"Travel Agent", self.travel_agent, "commission_pct") or 0
+			self.commission_amount = float(self.amount_before_tax or 0) * float(pct) / 100
+		else:
+			self.commission_amount = 0
 
 	def after_insert(self):
 		# every booking gets a pre-arrival check-in link

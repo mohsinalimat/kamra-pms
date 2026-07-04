@@ -18,6 +18,13 @@
   "group_booking",
   "source",
   "channel",
+  "travel_agent",
+  "commission_amount",
+  "sb_booker",
+  "booked_by_name",
+  "booked_by_phone",
+  "booker_relation",
+  "contact_preference",
   "sb_stay",
   "room_type",
   "room",
@@ -319,12 +326,53 @@
    "fieldname": "eta",
    "fieldtype": "Data",
    "label": "Guest ETA"
+  },
+  {
+   "fieldname": "travel_agent",
+   "fieldtype": "Link",
+   "label": "Travel Agent",
+   "options": "Travel Agent"
+  },
+  {
+   "fieldname": "commission_amount",
+   "fieldtype": "Currency",
+   "label": "Agent Commission",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sb_booker",
+   "fieldtype": "Section Break",
+   "label": "Booked By (if not the guest)"
+  },
+  {
+   "fieldname": "booked_by_name",
+   "fieldtype": "Data",
+   "label": "Booker Name"
+  },
+  {
+   "fieldname": "booked_by_phone",
+   "fieldtype": "Data",
+   "label": "Booker Phone"
+  },
+  {
+   "fieldname": "booker_relation",
+   "fieldtype": "Select",
+   "label": "Relation",
+   "options": "\nAssistant\nFamily\nCompany Travel Desk\nTravel Agent\nOther"
+  },
+  {
+   "default": "Guest",
+   "description": "Who the hotel (and agents) should message about this stay",
+   "fieldname": "contact_preference",
+   "fieldtype": "Select",
+   "label": "Contact For This Stay",
+   "options": "Guest\nBooker\nBoth"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-04 20:02:58.540939",
+ "modified": "2026-07-04 20:27:10.681601",
  "modified_by": "Administrator",
  "module": "Kamra",
  "name": "Reservation",

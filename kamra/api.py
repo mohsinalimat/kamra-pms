@@ -737,7 +737,11 @@ def create_booking(property: str, room_type: str, check_in_date: str,
                    booking_type: str = "Individual",
                    company: str | None = None,
                    group_booking: str | None = None,
-                   source: str = "Manual", assign_room: int = 1):
+                   source: str = "Manual", assign_room: int = 1,
+                   travel_agent: str | None = None,
+                   booked_by_name: str | None = None,
+                   booked_by_phone: str | None = None,
+                   booker_relation: str | None = None):
 	"""One-call booking: guest dedup by phone, optional auto room
 	assignment, voucher applied, price computed by the engine."""
 	guest = _find_or_create_guest(guest_name, phone)
@@ -774,6 +778,11 @@ def create_booking(property: str, room_type: str, check_in_date: str,
 		"group_booking": group_booking or None,
 		"source": source,
 		"is_day_use": 1 if check_in_date == check_out_date else 0,
+		"travel_agent": travel_agent or None,
+		"booked_by_name": booked_by_name or None,
+		"booked_by_phone": booked_by_phone or None,
+		"booker_relation": booker_relation or None,
+		"contact_preference": "Booker" if booked_by_name else "Guest",
 		"auto_price": 1,
 	})
 	doc.insert(ignore_permissions=False)
