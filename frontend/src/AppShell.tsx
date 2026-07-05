@@ -14,8 +14,11 @@ import {
   IndianRupee,
   LayoutGrid,
   ListChecks,
+  Moon,
   Plus,
   Receipt,
+  Settings as SettingsIcon,
+  Sun,
   ShieldCheck,
   Tags,
   Ticket,
@@ -35,6 +38,7 @@ import {
   type PropertyRow,
   type WhoAmI,
 } from "./lib/api"
+import { getTheme, setTheme } from "./lib/theme"
 import { cn } from "./lib/utils"
 import Login from "./screens/Login"
 
@@ -55,6 +59,8 @@ interface NavGroup {
   items: NavItem[]
 }
 
+/* Ordered by how often each group is touched in a working day:
+   desk first, ops second, money third, configuration last. */
 const NAV: NavGroup[] = [
   {
     label: "Front Desk",
@@ -68,11 +74,21 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    label: "Inventory",
-    roles: ["Front Desk", "Revenue Manager", "System Manager", "Administrator"],
+    label: "Ops",
+    roles: ["Front Desk", "System Manager", "Administrator"],
     items: [
-      { to: "/rooms", label: "Rooms", icon: BedDouble },
-      { to: "/room-types", label: "Room Types", icon: LayoutGrid },
+      { to: "/tickets", label: "Tickets", icon: Ticket },
+      { to: "/housekeeping", label: "Housekeeping", icon: ListChecks },
+      { to: "/lost-found", label: "Lost & Found", icon: PackageSearch },
+      { to: "/shifts", label: "Shifts", icon: Clock },
+    ],
+  },
+  {
+    label: "Finance",
+    roles: ["Finance", "System Manager", "Administrator"],
+    items: [
+      { to: "/billing", label: "Billing", icon: Receipt },
+      { to: "/companies", label: "Corporate", icon: Building2 },
     ],
   },
   {
@@ -96,29 +112,45 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    label: "Finance",
-    roles: ["Finance", "System Manager", "Administrator"],
+    label: "Inventory",
+    roles: ["Front Desk", "Revenue Manager", "System Manager", "Administrator"],
     items: [
-      { to: "/billing", label: "Billing", icon: Receipt },
-      { to: "/companies", label: "Corporate", icon: Building2 },
+      { to: "/rooms", label: "Rooms", icon: BedDouble },
+      { to: "/room-types", label: "Room Types", icon: LayoutGrid },
     ],
   },
   {
     label: "Admin",
     roles: ["System Manager", "Administrator"],
-    items: [{ to: "/setup", label: "New Property", icon: Plus }],
-  },
-  {
-    label: "Ops",
-    roles: ["Front Desk", "System Manager", "Administrator"],
     items: [
-      { to: "/tickets", label: "Tickets", icon: Ticket },
-      { to: "/housekeeping", label: "Housekeeping", icon: ListChecks },
-      { to: "/lost-found", label: "Lost & Found", icon: PackageSearch },
-      { to: "/shifts", label: "Shifts", icon: Clock },
+      { to: "/settings", label: "Settings", icon: SettingsIcon },
+      { to: "/setup", label: "New Property", icon: Plus },
     ],
   },
 ]
+
+function ThemeToggle() {
+  const [dark, setDark] = useState(() =>
+    document.documentElement.classList.contains("dark"),
+  )
+  return (
+    <button
+      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+      className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+      onClick={() => {
+        setTheme(dark ? "light" : "dark")
+        setDark(!dark)
+      }}
+      title={getTheme() === "system" ? "Theme (system)" : "Theme"}
+    >
+      {dark ? (
+        <Sun className="size-4" aria-hidden />
+      ) : (
+        <Moon className="size-4" aria-hidden />
+      )}
+    </button>
+  )
+}
 
 type AuthState = "loading" | "anon" | WhoAmI
 
@@ -239,6 +271,7 @@ export default function AppShell() {
             </span>
           )}
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
             <span className="hidden text-xs text-zinc-500 md:inline">
               {me.full_name}
             </span>

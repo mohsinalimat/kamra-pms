@@ -246,7 +246,7 @@ export default function PublicBooking() {
             className="absolute inset-0 size-full object-cover"
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-zinc-900/30 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 mx-auto flex max-w-5xl items-end gap-4 px-5 pb-6 text-white">
           {/* hotel logo slot — falls back to a monogram until one is set */}
           <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/30 bg-white shadow-lg sm:size-20">
@@ -405,7 +405,7 @@ export default function PublicBooking() {
                     </div>
                   )}
                   {rt.media.length > 1 && (
-                    <span className="absolute bottom-2 right-2 rounded-md bg-zinc-900/70 px-2 py-0.5 text-xs text-white">
+                    <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-2 py-0.5 text-xs text-white">
                       {rt.media.length} photos
                     </span>
                   )}

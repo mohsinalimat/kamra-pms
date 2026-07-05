@@ -12,6 +12,7 @@ import HkApp from "./screens/HkApp"
 import Guests from "./screens/Guests"
 import RegistrationCard from "./screens/RegistrationCard"
 import Setup from "./screens/Setup"
+import Settings from "./screens/Settings"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
 import Today from "./screens/Today"
@@ -158,6 +159,7 @@ export default function App() {
             element={<ResourceScreen config={shiftsConfig} />}
           />
           <Route path="setup" element={<Setup />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="tickets" element={<Tickets />} />
           <Route
             path="housekeeping"

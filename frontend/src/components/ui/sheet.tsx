@@ -29,7 +29,7 @@ export function Sheet(props: {
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
       <div
-        className="absolute inset-0 bg-zinc-900/40 animate-fade-in"
+        className="absolute inset-0 bg-black/40 animate-fade-in"
         onClick={props.onClose}
         aria-hidden
       />
