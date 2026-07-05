@@ -176,10 +176,11 @@ export const getSnapshot = () =>
     property: getCurrentProperty(),
   })
 
-export const getCalendar = (days = 14) =>
+export const getCalendar = (days = 14, startDate?: string) =>
   call<CalendarData>("kamra.api.availability_calendar", {
     property: getCurrentProperty(),
     days,
+    start_date: startDate ?? null,
   })
 
 export const getBookingOptions = () =>

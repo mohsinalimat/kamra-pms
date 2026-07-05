@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react"
 import { getCalendar, type CalendarData } from "../lib/api"
+import { Button } from "./ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
 import { cn } from "../lib/utils"
 
@@ -13,15 +15,43 @@ function cellTone(available: number, total: number) {
   return "bg-white text-zinc-700"
 }
 
+const DAYS = 14
+
+const iso = (d: Date) => d.toISOString().slice(0, 10)
+
+function shift(startIso: string, byDays: number) {
+  const d = new Date(startIso + "T00:00:00")
+  d.setDate(d.getDate() + byDays)
+  return iso(d)
+}
+
+function rangeLabel(dates: string[]) {
+  if (!dates.length) return ""
+  const f = new Date(dates[0]),
+    l = new Date(dates[dates.length - 1])
+  const fmt = (d: Date, withYear: boolean) =>
+    d.toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      ...(withYear ? { year: "numeric" } : {}),
+    })
+  return `${fmt(f, f.getFullYear() !== l.getFullYear())} – ${fmt(l, true)}`
+}
+
 export function CalendarView(props: {
   onPick: (roomType: string, date: string) => void
   refreshKey: number
 }) {
   const [data, setData] = useState<CalendarData | null>(null)
+  const [start, setStart] = useState(() => iso(new Date()))
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    getCalendar(14).then(setData)
-  }, [props.refreshKey])
+    setLoading(true)
+    getCalendar(DAYS, start)
+      .then(setData)
+      .finally(() => setLoading(false))
+  }, [props.refreshKey, start])
 
   if (!data) {
     return <p className="py-8 text-center text-sm text-zinc-400">Loading…</p>
@@ -39,12 +69,44 @@ export function CalendarView(props: {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Availability · next 14 days</CardTitle>
-        <span className="text-xs text-zinc-400">
-          Click a cell to start a booking
-        </span>
+        <div>
+          <CardTitle>Availability · {rangeLabel(data.dates)}</CardTitle>
+          <span className="text-xs text-zinc-400">
+            Click a cell to start a booking
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            aria-label="Previous 14 days"
+            onClick={() => setStart((s) => shift(s, -DAYS))}
+          >
+            <ChevronLeft className="size-4" aria-hidden />
+          </Button>
+          <Button
+            variant="outline"
+            disabled={start === iso(new Date())}
+            onClick={() => setStart(iso(new Date()))}
+          >
+            <CalendarDays className="size-4" aria-hidden /> Today
+          </Button>
+          <input
+            type="date"
+            aria-label="Jump to date"
+            className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+            value={start}
+            onChange={(e) => e.target.value && setStart(e.target.value)}
+          />
+          <Button
+            variant="outline"
+            aria-label="Next 14 days"
+            onClick={() => setStart((s) => shift(s, DAYS))}
+          >
+            <ChevronRight className="size-4" aria-hidden />
+          </Button>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className={cn(loading && "opacity-60 transition-opacity")}>
         <div className="overflow-x-auto">
           <table className="w-full border-separate border-spacing-0 text-sm">
             <thead>
@@ -54,12 +116,14 @@ export function CalendarView(props: {
                 </th>
                 {data.dates.map((d) => {
                   const l = dayLabel(d)
+                  const isToday = d === iso(new Date())
                   return (
                     <th
                       key={d}
                       className={cn(
                         "min-w-14 px-1 pb-2 text-center text-xs font-medium",
                         l.weekend ? "text-brand-700" : "text-zinc-500",
+                        isToday && "rounded-t-md bg-brand-50",
                       )}
                     >
                       <div>{l.dow}</div>
