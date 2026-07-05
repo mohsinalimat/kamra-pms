@@ -11,6 +11,17 @@ from frappe.utils import date_diff
 
 
 @frappe.whitelist(allow_guest=True)
+def site_info():
+	"""Public site metadata for the login/boot screen.
+
+	demo_mode is true only on the seeded demo site (seed_demo sets the
+	`kamra_demo_mode` default), so a real install never advertises the
+	demo login accounts.
+	"""
+	return {"demo_mode": frappe.db.get_default("kamra_demo_mode") == "1"}
+
+
+@frappe.whitelist(allow_guest=True)
 def showcase(property: str):
 	"""Everything the public booking page needs to render."""
 	prop = frappe.get_doc("Property", property)

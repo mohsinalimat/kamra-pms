@@ -34,6 +34,8 @@ GUESTS = [
 
 
 def execute():
+	# Mark this as a demo site so the login screen shows the demo accounts.
+	frappe.db.set_default("kamra_demo_mode", "1")
 	if frappe.db.exists("Property", PROPERTY):
 		print("Demo property already exists — skipping.")
 		return

@@ -11,9 +11,13 @@ from kamra.authz import require_roles
 from frappe.utils import add_days, nowdate
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def whoami():
-	"""Current user + roles — drives which modules the UI shows."""
+	"""Current user + roles — drives which modules the UI shows.
+
+	allow_guest so the SPA's initial "am I logged in?" probe returns
+	{user: "Guest"} cleanly instead of a 403 in the console.
+	"""
 	user = frappe.session.user
 	return {
 		"user": user,

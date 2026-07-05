@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
-import { login } from "../lib/api"
+import { call, login } from "../lib/api"
 import { asset } from "../lib/asset"
 import { Button } from "../components/ui/button"
 
@@ -21,6 +21,14 @@ export default function Login(props: { onSuccess: () => void }) {
   const [pwd, setPwd] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Demo accounts only exist on the seeded demo site; hide them elsewhere.
+  const [demoMode, setDemoMode] = useState(false)
+
+  useEffect(() => {
+    call<{ demo_mode: boolean }>("kamra.public_api.site_info")
+      .then((info) => setDemoMode(info.demo_mode))
+      .catch(() => setDemoMode(false))
+  }, [])
 
   async function submit(u = usr, p = pwd) {
     setBusy(true)
@@ -104,6 +112,7 @@ export default function Login(props: { onSuccess: () => void }) {
           </Button>
         </form>
 
+        {demoMode && (
         <div className="mt-4 rounded-xl border border-dashed border-zinc-300 p-4">
           <p className="mb-2 text-center text-xs text-zinc-400">
             Demo accounts — one tap to try each role
@@ -121,6 +130,7 @@ export default function Login(props: { onSuccess: () => void }) {
             ))}
           </div>
         </div>
+        )}
       </div>
     </div>
   )
