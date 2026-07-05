@@ -9,7 +9,7 @@ const inputCls =
   "focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
 
 const DEMO_ACCOUNTS = [
-  { label: "Hotel Admin", usr: "admin@kamra.local", pwd: "KamraAdmin1!" },
+  { label: "System Admin", usr: "admin@kamra.local", pwd: "KamraAdmin1!" },
   { label: "Front Desk", usr: "frontdesk@kamra.local", pwd: "KamraDesk1!" },
   { label: "Revenue", usr: "revenue@kamra.local", pwd: "KamraRev1!" },
   { label: "Finance", usr: "finance@kamra.local", pwd: "KamraFin1!" },
