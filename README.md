@@ -31,17 +31,30 @@ Hotels deserve better than:
 - **Truly free.** AGPL-licensed. No per-room pricing, no per-user seats, no license audits. Self-host on-prem or on any cloud.
 - **Built on Frappe.** The framework behind ERPNext — one of the world's largest open-source ERPs — with its mature ecosystem: RBAC, audit trails, multi-tenancy, the frappe/payments gateway app, and a huge developer community.
 
+## See it
+
+| | |
+|---|---|
+| ![Today — the front desk's morning view](docs/screenshots/today.png) | ![Tape chart — rooms × dates with drag-free moves](docs/screenshots/tape-chart.png) |
+| **Today** — arrivals, departures, in-house with paid/due chips, room board, hours-saved ledger | **Tape chart** — rooms × dates, booking bars, room moves & stay amendments |
+| ![New booking with live quote](docs/screenshots/booking-dialog.png) | ![Guest profile with the stay strip](docs/screenshots/guest-profile.png) |
+| **New booking** — returning-guest typeahead, live quote, sell message, multi-room, add-ons, cancellation policy in plain words | **Guest profile** — the stay strip, lifetime stats, upcoming stays, merge & anonymize |
+| ![GST invoice](docs/screenshots/invoice.png) | ![Public booking engine](docs/screenshots/public-booking.png) |
+| **Folio & GST invoice** — per-line GST, splits/transfers, payment links, multi-rate breakup | **Public booking page** — SEO-friendly, live rates, pay-at-hotel, zero commission |
+| ![Settings in dark mode](docs/screenshots/settings-dark.png) | |
+| **Settings hub** (dark mode) — GST slabs, ID retention, policies, payments, MCP agent access | |
+
 ## What's inside (today)
 
 | Area | Included |
 |---|---|
-| Front desk | Today dashboard, one-click check-in/out, reservations, guest CRM with journey timelines, blacklist |
-| Booking | Public SEO-friendly booking engine (photos, live rates, review links), group & corporate bookings, travel agents with commissions, day-use, booker-vs-guest |
-| Revenue | Occupancy-based pricing, seasons, rate plans, vouchers, meal plans, **rate guardrails**, owner-briefing API |
-| Billing | Folios with per-line GST (₹7,500 slab auto-switch), split/transfer folios, automated night audit, GST invoices, GSTR-1 export, payment links via frappe/payments (Razorpay/Stripe/PayPal/…) |
-| Operations | Service tickets with SLA, housekeeping **mobile app** (`/hk`), lost & found, shift handover, POS-lite (outlets/menu/orders → folio), venues & events |
-| Guests | Self check-in links, experiences showcase |
-| Platform | Multi-property with per-user scoping, six-role RBAC, onboarding wizard + **AI migration tools**, savings ledger, eval harness + CI |
+| Front desk | Today dashboard with paid/due chips, one-click check-in/out, tape chart, reservations, guest **profile hub** (stay strip, merge duplicates, anonymize/DPDP), blacklist |
+| Booking | Public SEO-friendly booking engine, **multi-room bookings in one flow**, group & corporate bookings, booked-on-behalf (booker vs guest), returning-guest typeahead, **add-ons at booking**, sell messages, travel agents with commissions, day-use |
+| Revenue | Occupancy-based pricing, seasons, rate plans, vouchers, meal plans, **rate guardrails**, cancellation/no-show/deposit **policies enforced in code**, owner-briefing API |
+| Billing | Folios with per-line GST (₹7,500 slab auto-switch), **corporate billing rules** (charge routing, alcohol always to guest), **group master folios**, %/₹ **charge splits** with exact conservation, bulk transfers, automated night audit that also charges no-shows, GST invoices with B2B GSTIN, GSTR-1 export, cashier reconciliation, payment links via frappe/payments |
+| Operations | Service tickets with SLA, housekeeping **mobile app** (`/hk`), lost & found, shift handover, POS-lite (outlets/menu/orders → folio, alcohol-aware), venues & events |
+| Guests | Self check-in links, printable **GRC with the legal occupant register**, ID retention modes (store / verify-and-discard), experiences showcase |
+| Platform | Multi-property with per-user scoping, six-role RBAC, settings hub, **dark mode**, onboarding wizard + **AI migration tools**, savings ledger, **18-check eval harness in CI** |
 
 ## Documentation
 
