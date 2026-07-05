@@ -6,6 +6,16 @@
 <p align="center"><b>The open-source, AI-native hotel PMS.</b><br/>
 Run your hotel with AI agents you control — on infrastructure you own.</p>
 
+<p align="center">
+  <a href="https://demo.kamrapms.com"><b>▶ Live demo</b></a> ·
+  <a href="https://github.com/Kamra-PMS/kamra-pms/tree/main/docs"><b>Docs</b></a> ·
+  <a href="https://github.com/Kamra-PMS/kamra-pms"><b>Source</b></a> ·
+  <a href="mailto:hello@kamrapms.com"><b>Contact</b></a>
+</p>
+
+> ### 🏨 Try it now → **[demo.kamrapms.com](https://demo.kamrapms.com)**
+> A live sandbox pre-loaded with a sample hotel. **Tap any role to sign in — the demo usernames and passwords are listed right on the page.** The guest booking engine is at [/book](https://demo.kamrapms.com/book) and the housekeeping phone app at [/kamra/hk](https://demo.kamrapms.com/kamra/hk).
+
 ---
 
 ## Why we built this
@@ -33,16 +43,18 @@ Hotels deserve better than:
 
 ## See it
 
+*Screens below are from the [live demo](https://demo.kamrapms.com) — open it and click around.*
+
 | | |
 |---|---|
-| ![Today — the front desk's morning view](docs/screenshots/today.png) | ![Tape chart — rooms × dates with drag-free moves](docs/screenshots/tape-chart.png) |
-| **Today** — arrivals, departures, in-house with paid/due chips, room board, hours-saved ledger | **Tape chart** — rooms × dates, booking bars, room moves & stay amendments |
+| ![Today — the front desk's morning view](docs/screenshots/today.png) | ![Reservation 360 — dates, money and guest journey in one place](docs/screenshots/reservation-360.png) |
+| **Today** — arrivals, departures, in-house with paid/due chips, room board, hours-saved ledger | **Reservation 360** — one panel with live billing, inline date amend, guest journey, and the right check-in/out/cancel actions |
+| ![Tape chart — rooms × dates with drag-free moves](docs/screenshots/tape-chart.png) | ![Manager reports & flash](docs/screenshots/reports.png) |
+| **Tape chart** — rooms × dates, booking bars, room moves & stay amendments | **Reports** — occupancy/ADR/RevPAR, MTD, collections, 14-day trend, printable flash |
 | ![New booking with live quote](docs/screenshots/booking-dialog.png) | ![Guest profile with the stay strip](docs/screenshots/guest-profile.png) |
 | **New booking** — returning-guest typeahead, live quote, sell message, multi-room, add-ons, cancellation policy in plain words | **Guest profile** — the stay strip, lifetime stats, upcoming stays, merge & anonymize |
 | ![GST invoice](docs/screenshots/invoice.png) | ![Public booking engine](docs/screenshots/public-booking.png) |
 | **Folio & GST invoice** — per-line GST, splits/transfers, payment links, multi-rate breakup | **Public booking page** — SEO-friendly, live rates, pay-at-hotel, zero commission |
-| ![Settings in dark mode](docs/screenshots/settings-dark.png) | |
-| **Settings hub** (dark mode) — GST slabs, ID retention, policies, payments, MCP agent access | |
 
 ## What's inside (today)
 
@@ -57,6 +69,8 @@ Hotels deserve better than:
 | Platform | Multi-property with per-user scoping, six-role RBAC, settings hub, **dark mode**, onboarding wizard + **AI migration tools**, savings ledger, **18-check eval harness in CI** |
 
 ## Documentation
+
+Full docs live in [`docs/`](docs/):
 
 - [Front-desk user guide](docs/user-guide.md) — a day at the desk, end to end
 - [AI & API setup](docs/ai-and-api.md) — the BYOK copilot, MCP, API keys, REST
@@ -116,6 +130,15 @@ Standard Python (Frappe) + React. Real RBAC, real audit trails, documented REST 
 ## License
 
 AGPL-3.0 — free forever. Anyone offering Kamra as a hosted service must share their modifications back, which keeps the ecosystem honest.
+
+## Links & contact
+
+- **Live demo:** [demo.kamrapms.com](https://demo.kamrapms.com) — credentials are on the page
+- **Documentation:** [`docs/`](docs/)
+- **Source & issues:** [github.com/Kamra-PMS/kamra-pms](https://github.com/Kamra-PMS/kamra-pms)
+- **Email:** [hello@kamrapms.com](mailto:hello@kamrapms.com)
+
+Built by [HeyKoala](https://heykoala.ai).
 
 ---
 

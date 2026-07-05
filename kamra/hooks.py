@@ -6,7 +6,7 @@ app_description = (
 	"housekeeping, folios and GST billing, with an MCP tool layer so AI "
 	"agents can run the property."
 )
-app_email = "azzaxp@users.noreply.github.com"
+app_email = "hello@kamrapms.com"
 app_license = "agpl-3.0"
 
 # Branding shown in the Desk navbar, app switcher and marketplace listing.
