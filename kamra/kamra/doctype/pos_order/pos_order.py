@@ -41,6 +41,7 @@ class POSOrder(Document):
 		folio.append("charges", {
 			"posting_date": nowdate(),
 			"charge_type": "Food & Beverage",
+			"reservation": self.reservation,
 			"description": f"{self.outlet.split('-')[-1]}: {detail} ({self.name})",
 			"qty": 1,
 			"rate": self.order_total,

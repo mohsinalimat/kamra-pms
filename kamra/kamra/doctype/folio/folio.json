@@ -15,6 +15,7 @@
   "column_break_a",
   "status",
   "folio_type",
+  "group_booking",
   "opened_on",
   "closed_on",
   "invoice_number",
@@ -165,7 +166,7 @@
    "fieldname": "folio_type",
    "fieldtype": "Select",
    "label": "Folio Type",
-   "options": "Guest\nExtra\nCompany"
+   "options": "Guest\nExtra\nCompany\nGroup"
   },
   {
    "fieldname": "payment_link_url",
@@ -178,6 +179,13 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Payment Link ID"
+  },
+  {
+   "description": "Set on the group master folio \u2014 collects company-payable charges across every reservation of the group.",
+   "fieldname": "group_booking",
+   "fieldtype": "Link",
+   "label": "Group Booking",
+   "options": "Group Booking"
   }
  ],
  "grid_page_length": 50,

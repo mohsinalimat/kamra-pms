@@ -72,6 +72,35 @@ export default function BillingRulesEditor({ row }: { row: Row; reload: () => vo
         Ticked charge types post to the Company folio on corporate stays.
         Everything else — and alcohol, always — bills to the guest.
       </p>
+      <div className="mb-2 flex gap-1.5">
+        <button
+          className="rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:border-brand-600"
+          onClick={() => {
+            setSaved(false)
+            setToCompany(new Set(["Room", "Meal Plan"]))
+          }}
+        >
+          Stay only
+        </button>
+        <button
+          className="rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:border-brand-600"
+          onClick={() => {
+            setSaved(false)
+            setToCompany(new Set(ROUTABLE))
+          }}
+        >
+          Everything
+        </button>
+        <button
+          className="rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:border-brand-600"
+          onClick={() => {
+            setSaved(false)
+            setToCompany(new Set())
+          }}
+        >
+          Nothing
+        </button>
+      </div>
       <div className="grid grid-cols-2 gap-1.5">
         {ROUTABLE.map((t) => (
           <label key={t} className="flex items-center gap-2 text-sm">

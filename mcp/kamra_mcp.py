@@ -183,6 +183,15 @@ def post_stay_charge(reservation: str, charge_type: str, description: str,
 
 
 @mcp.tool()
+def group_billing(group_booking: str) -> dict:
+    """A group's whole billing picture: the consolidated company (master)
+    folio plus each member reservation's own folios with balances. Use
+    split_folio_charge / transfer tools to move value between a member's
+    bill and the master — company pays the stay, guests pay their extras."""
+    return api("group_folios", group_booking=group_booking)
+
+
+@mcp.tool()
 def split_folio_charge(from_folio: str, charge_row: str, to_folio: str,
                        percent: float = 0, amount: float = 0) -> dict:
     """Split one charge line between two folios of the same stay — e.g.

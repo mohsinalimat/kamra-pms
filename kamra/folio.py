@@ -61,6 +61,40 @@ def open_folio(reservation) -> str:
 	return folio.name
 
 
+def open_group_folio(group_booking: str) -> str:
+	"""Open (or return) the group's master folio — one consolidated bill
+	for everything the company pays across all rooms of the group. It is
+	anchored to the group's lead (first) reservation so invoicing and
+	printing work unchanged."""
+	existing = frappe.db.get_value(
+		"Folio", {"group_booking": group_booking, "folio_type": "Group",
+		          "status": "Open"})
+	if existing:
+		return existing
+	lead = frappe.get_all(
+		"Reservation",
+		filters={"group_booking": group_booking,
+		         "status": ("not in", ("Cancelled", "No Show"))},
+		fields=["name", "property", "guest"],
+		order_by="creation asc", limit=1)
+	if not lead:
+		frappe.throw(f"Group {group_booking} has no active reservations.")
+	lead = lead[0]
+	folio = frappe.get_doc({
+		"doctype": "Folio",
+		"property": lead.property,
+		"reservation": lead.name,
+		"guest": lead.guest,
+		"folio_type": "Group",
+		"group_booking": group_booking,
+		"status": "Open",
+		"opened_on": now_datetime(),
+	})
+	_recalculate(folio)
+	folio.insert(ignore_permissions=True)
+	return folio.name
+
+
 def open_company_folio(reservation) -> str:
 	"""Open (or return) the Company folio of a corporate stay."""
 	existing = frappe.db.get_value(
@@ -73,37 +107,52 @@ def open_company_folio(reservation) -> str:
 	return split_folio(reservation.name, "Company")
 
 
+def _company_pays(company: str, charge_type: str) -> bool:
+	return frappe.db.get_value(
+		"Company Billing Rule",
+		{"parent": company, "charge_type": charge_type},
+		"pay_by",
+	) == "Company"
+
+
 def target_folio(reservation, charge_type: str, is_alcohol: int = 0) -> str:
 	"""Route a charge to the right folio of the stay.
 
-	Corporate stays route by the company's billing rules (charge type →
-	Company/Guest). Alcohol never bills to a company — Indian corporates
+	Group stays route company-payable charge types to the ONE group
+	master folio (company pays the stay for every room, each guest pays
+	their own extras). Individual corporate stays route to the stay's
+	Company folio. Alcohol never bills to a company — Indian corporates
 	won't settle it and most travel policies prohibit it.
 	"""
-	if reservation.get("company") and not is_alcohol:
-		pay_by = frappe.db.get_value(
-			"Company Billing Rule",
-			{"parent": reservation.company, "charge_type": charge_type},
-			"pay_by",
-		)
-		if pay_by == "Company":
+	if not is_alcohol:
+		group = reservation.get("group_booking")
+		if group:
+			company = frappe.db.get_value(
+				"Group Booking", group, "company")
+			if company and _company_pays(company, charge_type):
+				return open_group_folio(group)
+		if reservation.get("company") and _company_pays(
+				reservation.company, charge_type):
 			return open_company_folio(reservation)
 	return open_folio(reservation)
 
 
 def _charge_posted(reservation_name: str, charge_type: str, date: str) -> bool:
 	"""Has this charge type already been posted for this date on ANY folio
-	of the stay? Routing can spread a night across folios, so idempotency
-	must look stay-wide."""
+	of the stay? Routing can land a member's room night on the GROUP
+	master (anchored to the lead reservation), so we match on the line's
+	own provenance first and fall back to the folio's reservation for
+	lines predating the provenance field."""
 	return bool(frappe.db.sql(
 		"""
 		SELECT 1 FROM `tabFolio Charge` fc
 		JOIN `tabFolio` f ON fc.parent = f.name
-		WHERE f.reservation = %s AND fc.charge_type = %s
-		  AND fc.posting_date = %s
+		WHERE fc.charge_type = %(ct)s AND fc.posting_date = %(date)s
+		  AND (fc.reservation = %(res)s
+		       OR (IFNULL(fc.reservation, '') = '' AND f.reservation = %(res)s))
 		LIMIT 1
 		""",
-		(reservation_name, charge_type, str(date)),
+		{"res": reservation_name, "ct": charge_type, "date": str(date)},
 	))
 
 
@@ -167,6 +216,7 @@ def post_room_night(reservation, date, folios=None) -> bool:
 		_append_charge(folios, reservation, "Room", {
 			"posting_date": date,
 			"charge_type": "Room",
+			"reservation": reservation.name,
 			"description": f"Room {room_no} · {reservation.room_type.split('-')[-1]}"
 			               + (" · day use" if getattr(reservation, "is_day_use", 0) else ""),
 			"qty": 1,
@@ -188,6 +238,7 @@ def post_room_night(reservation, date, folios=None) -> bool:
 			_append_charge(folios, reservation, "Meal Plan", {
 				"posting_date": date,
 				"charge_type": "Meal Plan",
+				"reservation": reservation.name,
 				"description": f"{mp.label or mp.code} × {reservation.adults} adult(s)",
 				"qty": 1,
 				"rate": meal_amount,
@@ -247,24 +298,40 @@ def transfer_charge(from_folio: str, charge_row: str, to_folio: str):
 	transfer_charges(from_folio, [charge_row], to_folio)
 
 
+def _folio_group(folio) -> str | None:
+	return folio.get("group_booking") or frappe.db.get_value(
+		"Reservation", folio.reservation, "group_booking")
+
+
+def _assert_same_stay(src, dst):
+	"""Charges may move within a stay, or within a group — company pays
+	some rooms' charges on the master, guests settle the rest."""
+	if src.reservation == dst.reservation:
+		return
+	sg, dg = _folio_group(src), _folio_group(dst)
+	if sg and sg == dg:
+		return
+	frappe.throw("Folios belong to different stays.")
+
+
 def transfer_charges(from_folio: str, charge_rows: list, to_folio: str):
 	"""Move several charge lines at once — one save per folio, so a
 	corporate re-bill of a whole stay is a single operation."""
 	src = frappe.get_doc("Folio", from_folio)
 	dst = frappe.get_doc("Folio", to_folio)
-	if src.reservation != dst.reservation:
-		frappe.throw("Folios belong to different reservations.")
+	_assert_same_stay(src, dst)
 	if "Closed" in (src.status, dst.status):
 		frappe.throw("Both folios must be open to transfer charges.")
 	for charge_row in charge_rows:
 		row = next((c for c in src.charges if c.name == charge_row), None)
 		if not row:
 			frappe.throw(f"Charge {charge_row} not found on {from_folio}.")
-		if row.get("is_alcohol") and dst.folio_type == "Company":
+		if row.get("is_alcohol") and dst.folio_type in ("Company", "Group"):
 			frappe.throw("Alcohol cannot be billed to a company folio.")
 		dst.append("charges", {
 			"posting_date": row.posting_date,
 			"charge_type": row.charge_type,
+			"reservation": row.get("reservation"),
 			"description": row.description,
 			"qty": row.qty,
 			"rate": row.rate,
@@ -291,8 +358,7 @@ def split_charge(from_folio: str, charge_row: str, to_folio: str,
 	dst = frappe.get_doc("Folio", to_folio)
 	if from_folio == to_folio:
 		frappe.throw("Pick a different folio to split into.")
-	if src.reservation != dst.reservation:
-		frappe.throw("Folios belong to different reservations.")
+	_assert_same_stay(src, dst)
 	if "Closed" in (src.status, dst.status):
 		frappe.throw("Both folios must be open to split charges.")
 	row = next((c for c in src.charges if c.name == charge_row), None)
@@ -309,7 +375,7 @@ def split_charge(from_folio: str, charge_row: str, to_folio: str,
 		frappe.throw("Give a percent or an amount to split off.")
 	if part <= 0 or part >= base:
 		frappe.throw(f"Split must be between 0 and ₹{base} (exclusive).")
-	if row.get("is_alcohol") and dst.folio_type == "Company":
+	if row.get("is_alcohol") and dst.folio_type in ("Company", "Group"):
 		frappe.throw("Alcohol cannot be billed to a company folio.")
 
 	remainder = base - part
@@ -319,6 +385,7 @@ def split_charge(from_folio: str, charge_row: str, to_folio: str,
 	dst.append("charges", {
 		"posting_date": row.posting_date,
 		"charge_type": row.charge_type,
+		"reservation": row.get("reservation"),
 		"description": f"{row.description} · split",
 		"qty": 1,
 		"rate": float(part),

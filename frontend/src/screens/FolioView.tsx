@@ -57,6 +57,7 @@ interface InvoiceData {
     nights: number
     room: string | null
     company: string | null
+    group_booking: string | null
   }
   gst_summary: {
     rate: number
@@ -201,6 +202,24 @@ export default function FolioView() {
               Split folio
             </Button>
           )}
+          {open &&
+            data.stay.group_booking &&
+            !siblings.some((s) => s.folio_type === "Group") && (
+              <Button
+                variant="outline"
+                disabled={busy}
+                title="One consolidated company bill across every room of the group"
+                onClick={() =>
+                  act(() =>
+                    call("kamra.api.group_master_folio", {
+                      group_booking: data.stay.group_booking,
+                    }),
+                  )
+                }
+              >
+                Group folio
+              </Button>
+            )}
           <Button variant="outline" onClick={() => window.print()}>
             <Printer className="size-4" aria-hidden />
             Print {folio.invoice_number ? "invoice" : "folio"}

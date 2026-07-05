@@ -17,7 +17,8 @@
   "gst_amount",
   "total",
   "auto_posted",
-  "is_alcohol"
+  "is_alcohol",
+  "reservation"
  ],
  "fields": [
   {
@@ -92,6 +93,14 @@
    "fieldname": "is_alcohol",
    "fieldtype": "Check",
    "label": "Is Alcohol"
+  },
+  {
+   "description": "Which stay this line belongs to \u2014 needed on group master folios that collect charges from many rooms.",
+   "fieldname": "reservation",
+   "fieldtype": "Link",
+   "label": "Reservation",
+   "options": "Reservation",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

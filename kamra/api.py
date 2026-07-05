@@ -542,16 +542,18 @@ def get_folio(reservation: str):
 @frappe.whitelist()
 def add_folio_charge(folio: str, charge_type: str, description: str,
                      amount: float, gst_rate: float = 0,
-                     posting_date: str | None = None, is_alcohol: int = 0):
+                     posting_date: str | None = None, is_alcohol: int = 0,
+                     reservation: str | None = None):
 	doc = frappe.get_doc("Folio", folio)
 	if doc.status == "Closed":
 		frappe.throw("Folio is closed.")
-	if int(is_alcohol or 0) and doc.folio_type == "Company":
+	if int(is_alcohol or 0) and doc.folio_type in ("Company", "Group"):
 		frappe.throw("Alcohol cannot be billed to a company folio — "
 		             "post it to the guest folio.")
 	doc.append("charges", {
 		"posting_date": posting_date or nowdate(),
 		"charge_type": charge_type,
+		"reservation": reservation or doc.reservation,
 		"description": description,
 		"qty": 1,
 		"rate": float(amount),
@@ -597,7 +599,8 @@ def post_stay_charge(reservation: str, charge_type: str, description: str,
 	is_alcohol = 1 if int(is_alcohol or 0) else 0
 	folio_name = target_folio(res, charge_type, is_alcohol)
 	out = add_folio_charge(folio_name, charge_type, description, amount,
-	                       gst_rate, is_alcohol=is_alcohol)
+	                       gst_rate, is_alcohol=is_alcohol,
+	                       reservation=res.name)
 	return {"folio": folio_name, "folio_type": out.get("folio_type"),
 	        "balance": out.get("balance")}
 
@@ -695,16 +698,57 @@ def split_folio_charge(from_folio: str, charge_row: str, to_folio: str,
 	return out
 
 
+_FOLIO_LIST_FIELDS = ["name", "folio_type", "status", "invoice_number",
+                      "grand_total", "payments_total", "balance"]
+
+
 @frappe.whitelist()
 def reservation_folios(reservation: str):
-	"""All folios of a stay (guest + splits) with balances."""
-	return frappe.get_all(
+	"""All folios of a stay (guest + splits) with balances — plus the
+	group master folio when the stay belongs to a group, so charges can
+	be moved between a guest's bill and the company's consolidated one."""
+	rows = frappe.get_all(
 		"Folio",
 		filters={"reservation": reservation},
-		fields=["name", "folio_type", "status", "invoice_number",
-		        "grand_total", "payments_total", "balance"],
+		fields=_FOLIO_LIST_FIELDS,
 		order_by="creation asc",
 	)
+	group = frappe.db.get_value("Reservation", reservation, "group_booking")
+	if group:
+		seen = {r.name for r in rows}
+		rows += [m for m in frappe.get_all(
+			"Folio",
+			filters={"group_booking": group, "folio_type": "Group"},
+			fields=_FOLIO_LIST_FIELDS,
+		) if m.name not in seen]
+	return rows
+
+
+@frappe.whitelist()
+def group_master_folio(group_booking: str):
+	"""Get-or-create the group's consolidated company folio."""
+	from kamra.folio import open_group_folio
+	return {"folio": open_group_folio(group_booking)}
+
+
+@frappe.whitelist()
+def group_folios(group_booking: str):
+	"""The whole group's billing picture: the master folio plus every
+	member reservation's folios, with balances."""
+	master = frappe.get_all(
+		"Folio", filters={"group_booking": group_booking,
+		                  "folio_type": "Group"},
+		fields=_FOLIO_LIST_FIELDS)
+	members = frappe.get_all(
+		"Reservation",
+		filters={"group_booking": group_booking},
+		fields=["name", "guest_name", "room", "status"],
+		order_by="creation asc")
+	for m in members:
+		m["folios"] = [f for f in frappe.get_all(
+			"Folio", filters={"reservation": m.name},
+			fields=_FOLIO_LIST_FIELDS) if f.folio_type != "Group"]
+	return {"master": master[0] if master else None, "members": members}
 
 
 @frappe.whitelist()
@@ -729,11 +773,16 @@ def folio_invoice(folio: str):
 		slot["taxable"] += float(c.amount or 0)
 		slot["tax"] += float(c.gst_amount or 0)
 
-	# B2B: corporate bookings carry the buyer's GSTIN on the invoice
+	# B2B: corporate bookings carry the buyer's GSTIN on the invoice.
+	# A group master folio bills to the GROUP's company.
 	bill_to = None
-	if res.company:
+	bill_company = res.company
+	if doc.folio_type == "Group" and doc.get("group_booking"):
+		bill_company = frappe.db.get_value(
+			"Group Booking", doc.group_booking, "company") or bill_company
+	if bill_company:
 		company = frappe.db.get_value(
-			"Company", res.company, ["company_name", "gstin"], as_dict=True)
+			"Company", bill_company, ["company_name", "gstin"], as_dict=True)
 		if company:
 			bill_to = {"name": company.company_name, "gstin": company.gstin}
 
@@ -752,6 +801,7 @@ def folio_invoice(folio: str):
 			"check_out": str(res.check_out_date),
 			"nights": res.nights, "room": res.room,
 			"company": res.company,
+			"group_booking": res.get("group_booking"),
 		},
 		"gst_summary": [
 			{"rate": rate, "taxable": v["taxable"],

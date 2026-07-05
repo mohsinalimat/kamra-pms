@@ -290,6 +290,77 @@ def t14():
 		a.grand_total, b.grand_total)
 
 
+@check("group billing: company pays stays on ONE master, guest extras local")
+def t15():
+	from kamra import api
+	from kamra.folio import post_room_night
+	comp = frappe.get_doc({
+		"doctype": "Company", "company_name": "EVAL Group Corp",
+		"billing_rules": [{"charge_type": "Room", "pay_by": "Company"}],
+	}).insert(ignore_permissions=True)
+	room2 = frappe.get_doc({
+		"doctype": "Room", "property": P, "room_number": "E102",
+		"room_type": RT}).insert(ignore_permissions=True).name
+	gb = frappe.get_doc({
+		"doctype": "Group Booking", "property": P,
+		"group_name": "EVAL Offsite", "company": comp.name,
+		"check_in_date": "2030-10-01", "check_out_date": "2030-10-02",
+		"status": "Confirmed"}).insert(ignore_permissions=True)
+	g1 = _guest("Eval I", "+91 70000 00009")
+	g2 = _guest("Eval J", "+91 70000 00010")
+	r1 = _res(g1, "2030-10-01", "2030-10-02", ROOM)
+	r2 = _res(g2, "2030-10-01", "2030-10-02", room2)
+	for r in (r1, r2):
+		r.group_booking = gb.name
+		r.status = "Checked In"
+		r.save(ignore_permissions=True)
+
+	# both rooms' nights land on ONE master folio
+	assert post_room_night(r1, "2030-10-01") is True
+	assert post_room_night(r2, "2030-10-01") is True
+	master = frappe.db.get_value(
+		"Folio", {"group_booking": gb.name, "folio_type": "Group"})
+	assert master, "no group master folio"
+	md = frappe.get_doc("Folio", master)
+	rooms = [c for c in md.charges if c.charge_type == "Room"]
+	assert len(rooms) == 2 and md.charges_total == 8000, md.charges_total
+	# idempotent per member even though lines live on the lead-anchored master
+	assert post_room_night(r2, "2030-10-01") is False, "member double posted"
+
+	# guest extras stay on the guest's own folio
+	out = api.post_stay_charge(r2.name, "Laundry", "2 shirts", 300, 18)
+	assert out["folio_type"] == "Guest", out
+
+	# re-bill: move the extra onto the master, cross-reservation
+	gf = frappe.db.get_value(
+		"Folio", {"reservation": r2.name, "folio_type": "Guest"})
+	gfd = frappe.get_doc("Folio", gf)
+	api.transfer_folio_charges(gf, [gfd.charges[0].name], master)
+	md = frappe.get_doc("Folio", master)
+	assert md.charges_total == 8300, md.charges_total
+
+	# alcohol can never reach the master
+	try:
+		api.add_folio_charge(master, "Food & Beverage", "wine", 900, 0,
+		                     is_alcohol=1)
+		raise AssertionError("alcohol accepted on Group folio")
+	except frappe.ValidationError:
+		pass
+
+	# unrelated stays still cannot exchange charges
+	g3 = _guest("Eval K", "+91 70000 00011")
+	r3 = _res(g3, "2030-11-01", "2030-11-02", ROOM)
+	r3.status = "Checked In"
+	r3.save(ignore_permissions=True)
+	f3 = frappe.db.get_value(
+		"Folio", {"reservation": r3.name, "folio_type": "Guest"})
+	try:
+		api.transfer_folio_charge(master, md.charges[0].name, f3)
+		raise AssertionError("cross-stay transfer accepted")
+	except frappe.ValidationError:
+		pass
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -309,7 +380,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15):
 			fn()
 	finally:
 		frappe.db.rollback(save_point="eval_start")
