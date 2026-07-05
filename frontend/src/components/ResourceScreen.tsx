@@ -35,6 +35,13 @@ export interface ScreenConfig {
   orderBy?: string
   /** Custom section rendered in the drawer below the form (existing rows only). */
   extra?: ComponentType<{ row: Row; reload: () => void }>
+  /** Replace the generic edit form with a bespoke detail panel (existing rows).
+   *  When set, the drawer opens wide and the panel owns its own actions. */
+  detailPanel?: ComponentType<{
+    row: Row
+    reload: () => void
+    onClose: () => void
+  }>
 }
 
 const inputCls =
@@ -283,16 +290,20 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
         </div>
       </CardContent>
 
-      {editing && (
+      {editing && (() => {
+        const useDetail = editing !== "new" && !!config.detailPanel
+        return (
         <Sheet
+          wide={useDetail}
           title={
             editing === "new"
               ? `New ${config.title.replace(/s$/, "")}`
               : String(editing.name)
           }
-          description={config.description}
+          description={useDetail ? undefined : config.description}
           onClose={() => setEditing(null)}
           footer={
+            useDetail ? undefined : (
             <div className="flex items-center justify-between">
               {editing !== "new" && config.allowDelete !== false ? (
                 <Button
@@ -316,34 +327,44 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
                 </Button>
               </div>
             </div>
+            )
           }
         >
-          <div className="space-y-4">
-            {config.form.map((spec) => (
-              <label key={spec.field} className="block">
-                <span className="mb-1.5 block text-sm font-medium text-zinc-600">
-                  {spec.label}
-                  {spec.required && <span className="text-rose-500"> *</span>}
-                </span>
-                <FieldInput
-                  spec={spec}
-                  value={draft[spec.field]}
-                  onChange={(v) => setDraft((d) => ({ ...d, [spec.field]: v }))}
-                  linkOptions={linkOptions}
-                />
-              </label>
-            ))}
-            {editing !== "new" && config.extra && (
-              <config.extra row={editing} reload={load} />
-            )}
-            {error && (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {error}
-              </div>
-            )}
-          </div>
+          {useDetail && config.detailPanel ? (
+            <config.detailPanel
+              row={editing}
+              reload={load}
+              onClose={() => setEditing(null)}
+            />
+          ) : (
+            <div className="space-y-4">
+              {config.form.map((spec) => (
+                <label key={spec.field} className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-zinc-600">
+                    {spec.label}
+                    {spec.required && <span className="text-rose-500"> *</span>}
+                  </span>
+                  <FieldInput
+                    spec={spec}
+                    value={draft[spec.field]}
+                    onChange={(v) => setDraft((d) => ({ ...d, [spec.field]: v }))}
+                    linkOptions={linkOptions}
+                  />
+                </label>
+              ))}
+              {editing !== "new" && config.extra && (
+                <config.extra row={editing} reload={load} />
+              )}
+              {error && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {error}
+                </div>
+              )}
+            </div>
+          )}
         </Sheet>
-      )}
+        )
+      })()}
     </Card>
   )
 }

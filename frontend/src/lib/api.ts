@@ -278,3 +278,75 @@ export const checkOut = (reservation: string) =>
 
 export const setHousekeepingStatus = (room: string, status: string) =>
   call("kamra.api.set_housekeeping_status", { room, status })
+
+export interface ReservationDetail {
+  name: string
+  status: string
+  source: string | null
+  channel: string | null
+  booking_type: string | null
+  property: string
+  check_in_date: string
+  check_out_date: string
+  nights: number
+  adults: number
+  children: number
+  room: string | null
+  room_type: string | null
+  room_type_name: string | null
+  meal_plan: string | null
+  rate_plan: string | null
+  special_requests: string | null
+  eta: string | null
+  precheckin_status: string | null
+  precheckin_token: string | null
+  amount_after_tax: number
+  advance_paid: number
+  company: string | null
+  travel_agent: string | null
+  folio_name: string | null
+  money: { total: number; paid: number; due: number; has_folio: boolean }
+  guest: {
+    name: string
+    full_name: string
+    phone: string | null
+    email: string | null
+    vip: 0 | 1
+    blacklisted: 0 | 1
+    stays: number
+    last_stay: string | null
+  } | null
+  booker: {
+    name: string
+    phone: string | null
+    relation: string | null
+    contact_preference: string | null
+  } | null
+  cancellation: {
+    reason: string | null
+    note: string | null
+    number: string | null
+    fee: number
+    cancelled_on: string | null
+  } | null
+  actions: {
+    can_check_in: boolean
+    can_check_out: boolean
+    can_cancel: boolean
+    can_amend: boolean
+  }
+}
+
+export const reservationDetail = (name: string) =>
+  call<ReservationDetail>("kamra.api.reservation_detail", { reservation: name })
+
+export const amendStay = (
+  reservation: string,
+  check_in_date: string,
+  check_out_date: string,
+) =>
+  call<{ nights: number; amount_after_tax: number }>("kamra.api.amend_stay", {
+    reservation,
+    check_in_date,
+    check_out_date,
+  })

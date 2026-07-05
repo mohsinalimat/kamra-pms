@@ -1231,6 +1231,109 @@ def front_desk_snapshot(property: str | None = None, date: str | None = None):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent", "Finance", "Revenue Manager")
+def reservation_detail(reservation: str):
+	"""Everything about one booking in a single call — stay, money, guest,
+	booker and the actions currently available. Powers the reservation drawer."""
+	res = frappe.get_doc("Reservation", reservation)
+
+	# guest identity + stay history
+	guest = None
+	if res.guest:
+		g = frappe.db.get_value(
+			"Guest", res.guest,
+			["name", "full_name", "phone", "email", "vip", "blacklisted"],
+			as_dict=True,
+		)
+		if g:
+			g["stays"] = frappe.db.count("Reservation", {
+				"guest": res.guest, "status": ("in", ["Checked In", "Checked Out"])})
+			g["last_stay"] = frappe.db.get_value(
+				"Reservation", {"guest": res.guest, "status": "Checked Out",
+				                "name": ("!=", res.name)},
+				"check_out_date", order_by="check_out_date desc")
+			guest = g
+
+	# money — the guest folio for this stay (the group master is the company's
+	# bill, not this guest's, so it is never the source here)
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": reservation, "folio_type": "Guest"},
+		["name", "status", "grand_total", "payments_total", "balance"],
+		as_dict=True,
+	)
+	if folio:
+		money = {
+			"total": float(folio.grand_total or 0),
+			"paid": float(folio.payments_total or 0),
+			"due": float(folio.balance or 0),
+			"has_folio": True,
+		}
+	else:
+		# no folio yet (still Confirmed) — the booking-time advance is all we know
+		adv = float(res.advance_paid or 0)
+		total = float(res.amount_after_tax or 0)
+		money = {"total": total, "paid": adv,
+		         "due": max(0.0, total - adv), "has_folio": False}
+
+	booker = None
+	if res.booked_by_name:
+		booker = {
+			"name": res.booked_by_name, "phone": res.booked_by_phone,
+			"relation": res.booker_relation,
+			"contact_preference": res.contact_preference,
+		}
+
+	cancellation = None
+	if res.get("cancellation_number") or res.status == "Cancelled":
+		cancellation = {
+			"reason": res.get("cancellation_reason"),
+			"note": res.get("cancellation_note"),
+			"number": res.get("cancellation_number"),
+			"fee": float(res.get("cancellation_fee") or 0),
+			"cancelled_on": res.get("cancelled_on"),
+		}
+
+	return {
+		"name": res.name,
+		"status": res.status,
+		"source": res.source,
+		"channel": res.channel,
+		"booking_type": res.booking_type,
+		"property": res.property,
+		"check_in_date": res.check_in_date,
+		"check_out_date": res.check_out_date,
+		"nights": res.nights,
+		"adults": res.adults,
+		"children": res.children,
+		"room": res.room,
+		"room_type": res.room_type,
+		"room_type_name": frappe.db.get_value(
+			"Room Type", res.room_type, "room_type_name") if res.room_type else None,
+		"meal_plan": res.meal_plan,
+		"rate_plan": res.rate_plan,
+		"special_requests": res.special_requests,
+		"eta": res.eta,
+		"precheckin_status": res.precheckin_status,
+		"precheckin_token": res.get("precheckin_token"),
+		"amount_after_tax": float(res.amount_after_tax or 0),
+		"advance_paid": float(res.advance_paid or 0),
+		"company": res.company,
+		"travel_agent": res.travel_agent,
+		"folio_name": folio.name if folio else None,
+		"money": money,
+		"guest": guest,
+		"booker": booker,
+		"cancellation": cancellation,
+		"actions": {
+			"can_check_in": res.status == "Confirmed" and bool(res.room),
+			"can_check_out": res.status == "Checked In",
+			"can_cancel": res.status in ("Confirmed", "Checked In"),
+			"can_amend": res.status in ("Confirmed", "Checked In"),
+		},
+	}
+
+
+@frappe.whitelist()
 @require_roles("Front Desk", "Kamra Agent")
 def check_in(reservation: str, room: str | None = None):
 	doc = frappe.get_doc("Reservation", reservation)

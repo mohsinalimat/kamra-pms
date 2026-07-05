@@ -12,6 +12,8 @@ export function Sheet(props: {
   onClose: () => void
   footer?: React.ReactNode
   children: React.ReactNode
+  /** Wide surface (~2/3 screen) for rich detail panels. */
+  wide?: boolean
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -33,7 +35,12 @@ export function Sheet(props: {
         onClick={props.onClose}
         aria-hidden
       />
-      <div className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-2xl animate-sheet-in">
+      <div
+        className={
+          "absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl animate-sheet-in " +
+          (props.wide ? "max-w-[64rem] sm:w-[66vw]" : "max-w-md")
+        }
+      >
         <div className="flex items-start justify-between border-b border-zinc-100 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold">{props.title}</h2>

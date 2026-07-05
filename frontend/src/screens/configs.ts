@@ -1,6 +1,6 @@
 import type { ScreenConfig } from "../components/ResourceScreen"
 import BillingRulesEditor from "../components/BillingRulesEditor"
-import CancelPanel from "../components/CancelPanel"
+import ReservationDetail from "./ReservationDetail"
 
 export const roomsConfig: ScreenConfig = {
   doctype: "Room",
@@ -383,11 +383,10 @@ export const reservationsConfig: ScreenConfig = {
     { field: "amount_after_tax", label: "Total ₹" },
     { field: "advance_paid", label: "Advance ₹" },
   ],
+  // Editing happens in the bespoke detail panel; keep a minimal form as the
+  // fallback shape the generic screen still expects.
   form: [
-    { field: "guest_name", label: "Guest", type: "readonly" },
-    { field: "room", label: "Room", type: "link", linkDoctype: "Room" },
-    { field: "status", label: "Status", type: "select", options: ["Confirmed", "Checked In", "Checked Out"] },
     { field: "special_requests", label: "Special requests", type: "data" },
   ],
-  extra: CancelPanel,
+  detailPanel: ReservationDetail,
 }
