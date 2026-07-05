@@ -1,6 +1,17 @@
 import { Component, type ReactNode } from "react"
-import { Route, Routes, useOutletContext } from "react-router-dom"
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useOutletContext,
+} from "react-router-dom"
 import AppShell, { type ShellContext } from "./AppShell"
+import Login from "./screens/Login"
+import { useAuth } from "./lib/auth"
+import { toFullPath } from "./lib/routing"
 import { CalendarView } from "./components/CalendarView"
 import { ResourceScreen } from "./components/ResourceScreen"
 import Billing from "./screens/Billing"
@@ -70,6 +81,51 @@ class ErrorBoundary extends Component<
   }
 }
 
+function Splash() {
+  return <p className="py-20 text-center text-sm text-zinc-400">Loading…</p>
+}
+
+/** Gate for the app shell: redirects to /login (remembering where you were)
+ *  whenever there's no session, so the URL always matches the auth state. */
+function RequireAuth() {
+  const { status } = useAuth()
+  const location = useLocation()
+  if (status === "loading") return <Splash />
+  if (status === "anon")
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname + location.search }}
+      />
+    )
+  return <Outlet />
+}
+
+/** The /login route. Already signed in → bounce to where you came from.
+ *  On success, a full-page nav re-boots with the authenticated session's CSRF
+ *  token (login rotates it); dev soft-navigates. */
+function LoginPage() {
+  const { status, refresh } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const from = (location.state as { from?: string } | null)?.from || "/"
+  if (status === "loading") return <Splash />
+  if (status === "authed") return <Navigate to={from} replace />
+  return (
+    <Login
+      onSuccess={async () => {
+        if (import.meta.env.PROD) {
+          window.location.assign(toFullPath(from))
+        } else {
+          await refresh()
+          navigate(from, { replace: true })
+        }
+      }}
+    />
+  )
+}
+
 function CalendarScreen() {
   const { refreshKey, openBooking } = useOutletContext<ShellContext>()
   return (
@@ -96,7 +152,10 @@ export default function App() {
         <Route path="checkin/:token" element={<PublicCheckin />} />
         {/* housekeeping phone app — share the /hk URL with the HK team */}
         <Route path="hk" element={<HkApp />} />
-        <Route element={<AppShell />}>
+        {/* dedicated login route so signing out changes the URL */}
+        <Route path="login" element={<LoginPage />} />
+        <Route element={<RequireAuth />}>
+          <Route element={<AppShell />}>
           <Route index element={<Today />} />
           <Route path="calendar" element={<CalendarScreen />} />
           <Route path="tape" element={<TapeChart />} />
@@ -179,6 +238,7 @@ export default function App() {
               </p>
             }
           />
+          </Route>
         </Route>
       </Routes>
     </ErrorBoundary>

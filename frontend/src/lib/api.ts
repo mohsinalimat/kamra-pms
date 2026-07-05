@@ -23,6 +23,16 @@ async function doFetch(path: string, init?: RequestInit) {
   })
   if (!res.ok) {
     const body = await res.text()
+    // A 401/403 on anything other than the auth endpoints means the session may
+    // be gone. Signal the auth layer to re-check (and redirect to /login if so)
+    // instead of leaving a dead screen. Login's own 401 (wrong password) is
+    // excluded so it doesn't trigger a session re-check.
+    if (
+      (res.status === 401 || res.status === 403) &&
+      !path.includes("/api/method/login")
+    ) {
+      window.dispatchEvent(new Event("kamra:auth-error"))
+    }
     throw Object.assign(new Error(`${path} failed (${res.status})`), {
       status: res.status,
       body,

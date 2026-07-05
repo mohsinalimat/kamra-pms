@@ -36,14 +36,8 @@ export default function Login(props: { onSuccess: () => void }) {
     setError(null)
     try {
       await login(u, p)
-      // A successful login rotates the session's CSRF token. In production
-      // the token was injected into the served page for the *guest* session,
-      // so reload to re-boot with the authenticated token before any
-      // (CSRF-checked) POST fires. Dev runs with ignore_csrf, so soft-swap.
-      if (import.meta.env.PROD) {
-        window.location.reload()
-        return
-      }
+      // Navigation + the production CSRF re-boot are handled by the /login
+      // route (LoginPage.onSuccess).
       props.onSuccess()
     } catch {
       setError("Wrong email or password.")

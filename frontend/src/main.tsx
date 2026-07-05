@@ -5,6 +5,8 @@ import "./index.css"
 import App from "./App"
 import { initTheme } from "./lib/theme"
 import { asset } from "./lib/asset"
+import { AuthProvider } from "./lib/auth"
+import { ROUTER_BASENAME } from "./lib/routing"
 
 initTheme()
 
@@ -22,8 +24,10 @@ setIcon("apple-touch-icon", "apple-touch-180.png")
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter basename={import.meta.env.PROD ? "/kamra" : "/"}>
-      <App />
+    <BrowserRouter basename={ROUTER_BASENAME}>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
 )

@@ -34,18 +34,14 @@ import AssistantPanel from "./components/AssistantPanel"
 import { Button } from "./components/ui/button"
 import {
   getCurrentProperty,
-  isAuthError,
-  logout,
   myProperties,
   setCurrentProperty,
-  whoami,
   type PropertyRow,
-  type WhoAmI,
 } from "./lib/api"
 import { asset } from "./lib/asset"
+import { useAuth } from "./lib/auth"
 import { getTheme, setTheme } from "./lib/theme"
 import { cn } from "./lib/utils"
-import Login from "./screens/Login"
 
 export interface BookingInitial {
   room_type?: string
@@ -203,34 +199,23 @@ function ThemeToggle() {
   )
 }
 
-type AuthState = "loading" | "anon" | WhoAmI
-
 export default function AppShell() {
-  const [me, setMe] = useState<AuthState>("loading")
+  // Auth is centralized; RequireAuth guarantees we only mount when signed in.
+  const { user, roles, signOut } = useAuth()
   const [booking, setBooking] = useState<BookingInitial | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [properties, setProperties] = useState<PropertyRow[]>([])
   const [property, setProperty] = useState(getCurrentProperty())
 
-  const loadMe = () =>
-    whoami()
-      .then((w) => {
-        setMe(w.user === "Guest" ? "anon" : w)
-        if (w.user !== "Guest")
-          myProperties().then((props) => {
-            setProperties(props)
-            // if the stored property isn't visible to this user, snap to
-            // their first allowed one
-            if (props.length && !props.some((p) => p.name === getCurrentProperty())) {
-              setCurrentProperty(props[0].name)
-              setProperty(props[0].name)
-            }
-          })
-      })
-      .catch((e) => setMe(isAuthError(e) ? "anon" : "anon"))
-
   useEffect(() => {
-    loadMe()
+    myProperties().then((props) => {
+      setProperties(props)
+      // if the stored property isn't visible to this user, snap to their first
+      if (props.length && !props.some((p) => p.name === getCurrentProperty())) {
+        setCurrentProperty(props[0].name)
+        setProperty(props[0].name)
+      }
+    })
   }, [])
 
   function switchProperty(name: string) {
@@ -238,22 +223,8 @@ export default function AppShell() {
     setProperty(name)
   }
 
-  if (me === "loading") {
-    return (
-      <p className="py-20 text-center text-sm text-zinc-400">Loading…</p>
-    )
-  }
-  if (me === "anon") {
-    return <Login onSuccess={loadMe} />
-  }
-
   const canSee = (group: NavGroup) =>
-    group.roles.some((r) => me.roles.includes(r))
-
-  async function signOut() {
-    await logout().catch(() => undefined)
-    setMe("anon")
-  }
+    group.roles.some((r) => roles.includes(r))
 
   return (
     <div className="flex min-h-screen">
@@ -277,7 +248,7 @@ export default function AppShell() {
                 .filter(
                   (item) =>
                     !item.roles ||
-                    item.roles.some((r) => me.roles.includes(r)),
+                    item.roles.some((r) => roles.includes(r)),
                 )
                 .map((item) =>
                 item.href ? (
@@ -340,7 +311,7 @@ export default function AppShell() {
           <div className="ml-auto flex items-center gap-3">
             <ThemeToggle />
             <span className="hidden text-xs text-zinc-500 md:inline">
-              {me.full_name}
+              {user}
             </span>
             <button
               onClick={signOut}
