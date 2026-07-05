@@ -98,6 +98,7 @@ const NAV: NavGroup[] = [
     roles: ["Finance", "System Manager", "Administrator"],
     items: [
       { to: "/billing", label: "Billing", icon: Receipt },
+      { to: "/reports", label: "Reports", icon: IndianRupee },
       { to: "/companies", label: "Corporate", icon: Building2 },
     ],
   },
