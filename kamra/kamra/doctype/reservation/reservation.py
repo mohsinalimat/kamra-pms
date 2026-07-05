@@ -121,6 +121,11 @@ class Reservation(Document):
 		"""
 		if not self.room or self.status in ("Cancelled", "No Show", "Checked Out"):
 			return
+		# serialize concurrent bookings for the same room: the row lock
+		# makes the second transaction wait, and the locking read below
+		# then sees the first one's committed reservation — check-then-
+		# insert alone would let two simultaneous requests both pass
+		frappe.db.get_value("Room", self.room, "name", for_update=True)
 		# a day-use stay occupies [check_in, check_in + 1 day) — GREATEST
 		# normalises both sides of the comparison
 		conflict = frappe.db.sql(
@@ -134,6 +139,7 @@ class Reservation(Document):
 			  AND GREATEST(check_out_date,
 			               DATE_ADD(check_in_date, INTERVAL 1 DAY)) > %(check_in)s
 			LIMIT 1
+			FOR UPDATE
 			""",
 			{
 				"room": self.room,
