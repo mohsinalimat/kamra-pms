@@ -361,6 +361,38 @@ def t15():
 		pass
 
 
+@check("profiles: merge repoints stays & money intact; anonymize keeps books")
+def t16():
+	from kamra import api
+	from kamra.folio import post_room_night
+	dup = _guest("Eval Dup", "+91 70000 00012")
+	keep = _guest("Eval Keep", "+91 70000 00013")
+	frappe.db.set_value("Guest", dup, "email", "dup@eval.test")
+	res = _res(dup, "2030-12-01", "2030-12-02", ROOM)
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	post_room_night(res, "2030-12-01")
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"})
+	total_before = frappe.db.get_value("Folio", folio, "grand_total")
+
+	out = api.merge_guests(dup, keep)
+	assert out["moved"].get("Reservation") == 1, out
+	assert not frappe.db.exists("Guest", dup), "duplicate survived"
+	assert frappe.db.get_value("Reservation", res.name, "guest") == keep
+	assert frappe.db.get_value("Folio", folio, "guest") == keep
+	assert frappe.db.get_value("Folio", folio, "grand_total") == total_before
+	# survivor inherited the blank email from the duplicate
+	assert frappe.db.get_value("Guest", keep, "email") == "dup@eval.test"
+
+	out = api.anonymize_guest(keep)
+	g = frappe.get_doc("Guest", keep)
+	assert g.full_name == out["alias"] and not g.phone and not g.email
+	assert frappe.db.get_value(
+		"Reservation", res.name, "guest_name") == out["alias"]
+	assert frappe.db.get_value("Folio", folio, "grand_total") == total_before
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -380,7 +412,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16):
 			fn()
 	finally:
 		frappe.db.rollback(save_point="eval_start")

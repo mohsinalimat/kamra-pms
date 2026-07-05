@@ -42,9 +42,18 @@ import { getTheme, setTheme } from "./lib/theme"
 import { cn } from "./lib/utils"
 import Login from "./screens/Login"
 
+export interface BookingInitial {
+  room_type?: string
+  date?: string
+  guest?: string
+  guest_name?: string
+  phone?: string
+  stays?: number
+}
+
 export interface ShellContext {
   refreshKey: number
-  openBooking: (initial: { room_type?: string; date?: string }) => void
+  openBooking: (initial: BookingInitial) => void
 }
 
 interface NavItem {
@@ -156,10 +165,7 @@ type AuthState = "loading" | "anon" | WhoAmI
 
 export default function AppShell() {
   const [me, setMe] = useState<AuthState>("loading")
-  const [booking, setBooking] = useState<{
-    room_type?: string
-    date?: string
-  } | null>(null)
+  const [booking, setBooking] = useState<BookingInitial | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [properties, setProperties] = useState<PropertyRow[]>([])
   const [property, setProperty] = useState(getCurrentProperty())

@@ -207,10 +207,25 @@ export interface QuoteParams {
 export const getQuote = (params: QuoteParams) =>
   call<Quote>("kamra.api.get_quote", { property: getCurrentProperty(), ...params })
 
+export interface GuestHit {
+  name: string
+  full_name: string
+  phone: string | null
+  email: string | null
+  vip: 0 | 1
+  blacklisted: 0 | 1
+  stays: number
+  last_stay: string | null
+}
+
+export const guestSearch = (q: string) =>
+  call<GuestHit[]>("kamra.api.guest_search", { q })
+
 export const createBooking = (
   params: QuoteParams & {
     guest_name: string
     phone?: string
+    guest?: string
     company?: string
     travel_agent?: string
     booking_type?: string

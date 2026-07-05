@@ -866,6 +866,115 @@ def guests_with_stats(search: str | None = None):
 
 
 @frappe.whitelist()
+def guest_search(q: str):
+	"""Typeahead for attaching a booking to an existing profile."""
+	q = (q or "").strip()
+	if len(q) < 2:
+		return []
+	return frappe.db.sql(
+		"""
+		SELECT g.name, g.full_name, g.phone, g.email, g.vip, g.blacklisted,
+		       COUNT(r.name) AS stays, MAX(r.check_in_date) AS last_stay
+		FROM `tabGuest` g
+		LEFT JOIN `tabReservation` r
+		       ON r.guest = g.name AND r.status IN ('Checked In', 'Checked Out')
+		WHERE g.full_name LIKE %(q)s OR g.phone LIKE %(q)s
+		GROUP BY g.name
+		ORDER BY stays DESC, g.modified DESC
+		LIMIT 8
+		""",
+		{"q": f"%{q}%"}, as_dict=True,
+	)
+
+
+_GUEST_LINKS = [  # every doctype that points at a Guest
+	("Reservation", "guest"), ("Folio", "guest"),
+	("Service Ticket", "guest"), ("Lost And Found Item", "guest"),
+]
+
+
+@frappe.whitelist()
+def merge_guests(source: str, target: str):
+	"""Merge a duplicate profile into the surviving one: every linked
+	document is repointed, missing contact fields are copied over, and
+	the duplicate is deleted. Money is untouched — folios keep their
+	lines and totals."""
+	if source == target:
+		frappe.throw("Pick two different profiles to merge.")
+	src = frappe.get_doc("Guest", source)
+	dst = frappe.get_doc("Guest", target)
+
+	moved = {}
+	for doctype, field in _GUEST_LINKS:
+		rows = frappe.get_all(doctype, filters={field: source}, pluck="name")
+		for name in rows:
+			frappe.db.set_value(doctype, name, field, target,
+			                    update_modified=False)
+		if rows:
+			moved[doctype] = len(rows)
+	# denormalized guest_name on stays and bills follows the survivor
+	for doctype in ("Reservation", "Folio"):
+		frappe.db.sql(
+			f"UPDATE `tab{doctype}` SET guest_name = %s WHERE guest = %s",
+			(dst.full_name, target))
+
+	# fill the survivor's blanks from the duplicate; strictest flags win
+	for field in ("phone", "email", "id_type", "id_number", "nationality",
+	              "address_line", "city", "guest_notes"):
+		if not dst.get(field) and src.get(field):
+			dst.set(field, src.get(field))
+	if src.vip:
+		dst.vip = 1
+	if src.blacklisted:
+		dst.blacklisted = 1
+		dst.blacklist_reason = dst.blacklist_reason or src.blacklist_reason
+	dst.save(ignore_permissions=True)
+	frappe.delete_doc("Guest", source, ignore_permissions=True)
+
+	from kamra.savings import log_action
+	log_action("merge_guests", "Guest", target,
+	           rationale=f"Merged {source} into {target}: "
+	                     + ", ".join(f"{k}×{v}" for k, v in moved.items()))
+	return {"target": target, "moved": moved}
+
+
+@frappe.whitelist()
+def anonymize_guest(guest: str):
+	"""Right-to-erasure: strip everything that identifies the person while
+	keeping stays and bills intact for the books. Irreversible."""
+	doc = frappe.get_doc("Guest", guest)
+	alias = f"Guest {frappe.generate_hash(length=6).upper()}"
+	doc.update({
+		"first_name": alias, "last_name": "", "full_name": alias,
+		"phone": "", "email": "", "id_type": "", "id_number": "",
+		"nationality": "", "address_line": "", "city": "",
+		"guest_notes": "Profile anonymized on request.", "vip": 0,
+	})
+	doc.save(ignore_permissions=True)
+	for doctype in ("Reservation", "Folio"):
+		frappe.db.sql(
+			f"UPDATE `tab{doctype}` SET guest_name = %s WHERE guest = %s",
+			(alias, guest))
+	# the stay register keeps masked IDs only
+	for r in frappe.get_all("Reservation", filters={"guest": guest},
+	                        pluck="name"):
+		res = frappe.get_doc("Reservation", r)
+		for o in res.get("occupants") or []:
+			if o.id_number:
+				frappe.db.set_value("Stay Occupant", o.name, "id_number",
+				                    _mask_id(o.id_number),
+				                    update_modified=False)
+		if res.get("booked_by_phone"):
+			frappe.db.set_value("Reservation", r, "booked_by_phone", "",
+			                    update_modified=False)
+
+	from kamra.savings import log_action
+	log_action("anonymize_guest", "Guest", guest,
+	           rationale="PII erased; financial records preserved")
+	return {"guest": guest, "alias": alias}
+
+
+@frappe.whitelist()
 def guest_journey(guest: str):
 	"""One guest's full story: profile, stats, chronological timeline.
 	This is the CRM detail view — and the context an AI concierge loads
@@ -956,6 +1065,11 @@ def guest_journey(guest: str):
 			"first_name": doc.first_name, "phone": doc.phone,
 			"email": doc.email, "vip": doc.vip,
 			"nationality": doc.nationality, "id_type": doc.id_type,
+			"id_number": doc.id_number,
+			"blacklisted": doc.get("blacklisted"),
+			"blacklist_reason": doc.get("blacklist_reason"),
+			"address": ", ".join(filter(None, [
+				doc.get("address_line"), doc.get("city")])),
 			"notes": doc.guest_notes,
 		},
 		"stats": stats,
@@ -1298,10 +1412,16 @@ def create_booking(property: str, room_type: str, check_in_date: str,
                    booked_by_name: str | None = None,
                    booked_by_phone: str | None = None,
                    booker_relation: str | None = None,
-                   contact_preference: str | None = None):
-	"""One-call booking: guest dedup by phone, optional auto room
-	assignment, voucher applied, price computed by the engine."""
-	guest = _find_or_create_guest(guest_name, phone)
+                   contact_preference: str | None = None,
+                   guest: str | None = None):
+	"""One-call booking: attach to an existing guest profile when given,
+	else dedup by phone / create one. Optional auto room assignment,
+	voucher applied, price computed by the engine."""
+	if guest:
+		if not frappe.db.exists("Guest", guest):
+			frappe.throw(f"Guest profile {guest} not found.")
+	else:
+		guest = _find_or_create_guest(guest_name, phone)
 
 	voucher = None
 	if voucher_code:

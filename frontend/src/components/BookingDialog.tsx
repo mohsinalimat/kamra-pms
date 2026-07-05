@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
-import { Loader2, X } from "lucide-react"
+import { Loader2, Star, X } from "lucide-react"
 import {
   createBooking,
   getBookingOptions,
   getQuote,
+  guestSearch,
   type BookingOptions,
+  type GuestHit,
   type Quote,
 } from "../lib/api"
 import { Button } from "./ui/button"
@@ -28,7 +30,14 @@ const inr = (n: number) =>
   n.toLocaleString("en-IN", { maximumFractionDigits: 0 })
 
 export function BookingDialog(props: {
-  initial: { room_type?: string; date?: string }
+  initial: {
+    room_type?: string
+    date?: string
+    guest?: string
+    guest_name?: string
+    phone?: string
+    stays?: number
+  }
   onClose: () => void
   onBooked: () => void
 }) {
@@ -42,8 +51,8 @@ export function BookingDialog(props: {
   )
 
   const [form, setForm] = useState({
-    guest_name: "",
-    phone: "",
+    guest_name: props.initial.guest_name ?? "",
+    phone: props.initial.phone ?? "",
     room_type: props.initial.room_type ?? "",
     check_in_date: props.initial.date ?? new Date().toISOString().slice(0, 10),
     nights: 1,
@@ -59,6 +68,34 @@ export function BookingDialog(props: {
     contact_preference: "Booker",
   })
   const [onBehalf, setOnBehalf] = useState(false)
+  const [profile, setProfile] = useState<GuestHit | null>(() =>
+    props.initial.guest
+      ? {
+          name: props.initial.guest,
+          full_name: props.initial.guest_name ?? "",
+          phone: props.initial.phone ?? null,
+          email: null,
+          vip: 0,
+          blacklisted: 0,
+          stays: props.initial.stays ?? 0,
+          last_stay: null,
+        }
+      : null,
+  )
+  const [hits, setHits] = useState<GuestHit[]>([])
+
+  // profile typeahead — find the returning guest before creating a dupe
+  useEffect(() => {
+    if (profile || form.guest_name.trim().length < 2) {
+      setHits([])
+      return
+    }
+    const t = setTimeout(
+      () => guestSearch(form.guest_name).then(setHits).catch(() => setHits([])),
+      250,
+    )
+    return () => clearTimeout(t)
+  }, [form.guest_name, profile])
 
   useEffect(() => {
     getBookingOptions().then((o) => {
@@ -133,6 +170,7 @@ export function BookingDialog(props: {
       const res = await createBooking({
         guest_name: form.guest_name,
         phone: form.phone || undefined,
+        guest: profile?.name,
         room_type: form.room_type,
         check_in_date: form.check_in_date,
         check_out_date: checkOut,
@@ -211,13 +249,65 @@ export function BookingDialog(props: {
             <div className="space-y-5 px-7 py-6 md:col-span-3">
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Guest name">
-                  <input
-                    className={inputCls}
-                    value={form.guest_name}
-                    onChange={(e) => set("guest_name", e.target.value)}
-                    placeholder="Full name"
-                    autoFocus
-                  />
+                  <div className="relative">
+                    <input
+                      className={inputCls}
+                      value={form.guest_name}
+                      onChange={(e) => {
+                        setProfile(null)
+                        set("guest_name", e.target.value)
+                      }}
+                      placeholder="Type to find or create"
+                      autoFocus
+                    />
+                    {hits.length > 0 && (
+                      <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
+                        {hits.map((h) => (
+                          <li key={h.name}>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                              onClick={() => {
+                                setProfile(h)
+                                setHits([])
+                                setForm((f) => ({
+                                  ...f,
+                                  guest_name: h.full_name,
+                                  phone: h.phone ?? f.phone,
+                                }))
+                              }}
+                            >
+                              <span className="font-medium">{h.full_name}</span>
+                              {Boolean(h.vip) && (
+                                <Star
+                                  className="size-3 fill-amber-400 text-amber-400"
+                                  aria-label="VIP"
+                                />
+                              )}
+                              <span className="ml-auto text-xs text-zinc-400">
+                                {h.phone ? `${h.phone} · ` : ""}
+                                {h.stays} stay{h.stays === 1 ? "" : "s"}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  {profile && (
+                    <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700">
+                      Returning guest · {profile.stays} stay
+                      {profile.stays === 1 ? "" : "s"}
+                      <button
+                        type="button"
+                        aria-label="Detach profile — create a new guest instead"
+                        onClick={() => setProfile(null)}
+                        className="text-brand-700/60 hover:text-brand-700"
+                      >
+                        <X className="size-3" aria-hidden />
+                      </button>
+                    </span>
+                  )}
                 </Field>
                 <Field label="Phone">
                   <input
