@@ -1,9 +1,29 @@
 app_name = "kamra"
 app_title = "Kamra"
 app_publisher = "HeyKoala"
-app_description = "Open-source, AI-native hotel PMS"
+app_description = (
+	"Open-source, AI-native hotel PMS — front desk, direct booking, "
+	"housekeeping, folios and GST billing, with an MCP tool layer so AI "
+	"agents can run the property."
+)
 app_email = "azzaxp@users.noreply.github.com"
 app_license = "agpl-3.0"
+
+# Branding shown in the Desk navbar, app switcher and marketplace listing.
+app_logo_url = "/assets/kamra/kamra-mark.svg"
+app_icon = "octicon octicon-home"
+app_color = "#1E7B4F"
+
+# The product UI is the React SPA at /kamra; surface it in the Apps launcher
+# (and the /apps grid) so users land on it instead of the Desk.
+add_to_apps_screen = [
+	{
+		"name": "kamra",
+		"logo": "/assets/kamra/kamra-mark.svg",
+		"title": "Kamra",
+		"route": "/kamra",
+	}
+]
 
 # Automated end-of-day: post room charges, flag no-shows, per property.
 scheduler_events = {

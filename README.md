@@ -65,19 +65,38 @@ Hotels deserve better than:
 - [Listing on the Frappe Cloud Marketplace](docs/frappe-marketplace.md)
 - [Developer notes](docs-dev.md) · [Brand assets](branding/README.md)
 
+## Install
+
+```bash
+bench get-app payments
+bench get-app kamra https://github.com/Kamra-PMS/kamra-pms
+bench --site your-site install-app kamra
+```
+
+Kamra ships its built front-end, so after install the product UI is live at
+**`/kamra`** (the booking engine redirects in at `/book`, housekeeping at
+`/hk`) — no Node server in production. The Frappe Desk stays available at
+`/app` as an admin escape hatch. A fresh install creates its own roles and
+permissions; sign in as your Administrator and open `/kamra/setup` to create
+your property, then add staff users.
+
 ## Quickstart (development)
 
 ```bash
 bench init --frappe-branch v16.25.0 frappe-bench && cd frappe-bench
 bench get-app payments
-bench get-app kamra https://github.com/Kamra-PMS/pms
+bench get-app kamra https://github.com/Kamra-PMS/kamra-pms
 bench new-site kamra.localhost --admin-password admin
 bench --site kamra.localhost install-app kamra
 bench serve --port 8000
-cd apps/kamra/frontend && npm install && npm run dev   # UI on :5173
+cd apps/kamra/frontend && npm install && npm run dev   # hot-reload UI on :5173
 ```
 
-Seed demo data, roles and users: see `kamra/scripts/` (run via `bench console`). Full dev notes: [docs-dev.md](docs-dev.md).
+Rebuild the production UI after front-end changes with `npm run build` at the
+app root (emits into `kamra/public/frontend`, served at `/kamra`). Seed a demo
+property, roles and users via `bench --site … execute kamra.scripts.seed_demo.execute`
+(this also enables the demo-account buttons on the login screen). Full dev
+notes: [docs-dev.md](docs-dev.md).
 
 Connect an AI agent:
 

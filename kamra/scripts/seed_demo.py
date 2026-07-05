@@ -34,10 +34,14 @@ GUESTS = [
 
 
 def execute():
+	from kamra.scripts.seed_users import ensure_users
+
 	# Mark this as a demo site so the login screen shows the demo accounts.
 	frappe.db.set_default("kamra_demo_mode", "1")
 	if frappe.db.exists("Property", PROPERTY):
-		print("Demo property already exists — skipping.")
+		ensure_users()  # keep login accounts present even on re-run
+		frappe.db.commit()
+		print("Demo property already exists — ensured demo users, skipping seed.")
 		return
 
 	random.seed(8)  # reproducible demo
@@ -189,5 +193,8 @@ def execute():
 			channel="Voice" if "call" in action else "WhatsApp",
 		)
 
+	# Demo login accounts (one per role) so the gated login buttons work.
+	ensure_users()
+
 	frappe.db.commit()
-	print(f"Seeded demo property '{PROPERTY}' with rooms, guests and reservations.")
+	print(f"Seeded demo property '{PROPERTY}' with rooms, guests, reservations and login users.")

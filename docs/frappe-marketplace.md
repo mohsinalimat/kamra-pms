@@ -30,6 +30,21 @@ plus revenue share for free open-source apps.
    one click. Keep `main` releasable — Marketplace installs track your
    branch releases.
 
+## Front-end build
+
+Kamra's product UI is a React SPA served at **`/kamra`** (see
+`kamra/www/kamra.py` and `website_route_rules` in `hooks.py`). The build is
+wired two ways so it works on Frappe Cloud *and* a plain `bench get-app`:
+
+- The root `package.json` `build` script (`cd frontend && npm install &&
+  npm run build`) emits into `kamra/public/frontend`. Frappe Cloud runs it on
+  deploy, so hashes stay fresh.
+- Those built assets are **also committed** under `kamra/public/frontend`, so a
+  bare clone/install serves the UI even without a Node build step.
+
+After a front-end change, run `npm run build` at the app root and commit the
+regenerated `kamra/public/frontend` (CI checks it is current).
+
 ## Monetization options
 
 - Keep the app **free** (our model) and opt into the
@@ -44,5 +59,7 @@ plus revenue share for free open-source apps.
 - [ ] Repo public, AGPL LICENSE present
 - [ ] README with screenshots
 - [ ] `required_apps` declared (payments) — Marketplace resolves them
-- [ ] Fresh-install test green in CI
+- [ ] App metadata set (`app_logo_url`, `app_icon`, `app_color`, `app_email`, version)
+- [ ] Built front-end committed under `kamra/public/frontend` and current
+- [ ] Fresh-install test green in CI (roles bind, `/kamra` serves)
 - [ ] Support email / issue tracker linked
