@@ -165,8 +165,14 @@ def _settings(property: str):
 @frappe.whitelist()
 def assistant_status(property: str):
 	s = _settings(property)
-	return {"enabled": bool(s and s.enabled and s.get_password(
-		"api_key", raise_exception=False))}
+	key = s.get_password("api_key", raise_exception=False) if s else None
+	# Never return the key — only a masked tail so admins can confirm one is set.
+	key_hint = ("••••" + key[-4:]) if key and len(key) >= 4 else None
+	return {
+		"enabled": bool(s and s.enabled and key),
+		"model": (s.model if s else None) or "gpt-4o-mini",
+		"key_hint": key_hint,
+	}
 
 
 def _tool_defs():

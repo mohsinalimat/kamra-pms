@@ -445,8 +445,12 @@ export default function Settings() {
             <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">
               agent@kamra.local
             </code>{" "}
-            user (Kamra Agent role) — generate its API key & secret from the
-            user's page in the Desk.
+            user (Kamra Agent role). Generate an API key &amp; secret — and see
+            the full REST reference — on the{" "}
+            <a href="/kamra/developers" className="font-medium text-brand-700 hover:underline">
+              Developers
+            </a>{" "}
+            page.
           </p>
           <pre className="overflow-x-auto rounded-lg bg-zinc-100 p-3 text-xs leading-relaxed text-zinc-700">
             {`claude mcp add kamra \\

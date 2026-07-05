@@ -18,6 +18,7 @@ import {
   Plus,
   Receipt,
   Settings as SettingsIcon,
+  Code2,
   Sun,
   ShieldCheck,
   Tags,
@@ -136,6 +137,7 @@ const NAV: NavGroup[] = [
     roles: ["System Manager", "Administrator"],
     items: [
       { to: "/settings", label: "Settings", icon: SettingsIcon },
+      { to: "/developers", label: "Developers", icon: Code2 },
       { to: "/setup", label: "New Property", icon: Plus },
     ],
   },

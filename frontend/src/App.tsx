@@ -14,6 +14,7 @@ import RegistrationCard from "./screens/RegistrationCard"
 import CancellationLetter from "./screens/CancellationLetter"
 import Setup from "./screens/Setup"
 import Settings from "./screens/Settings"
+import Developers from "./screens/Developers"
 import Reports from "./screens/Reports"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
@@ -163,6 +164,7 @@ export default function App() {
           />
           <Route path="setup" element={<Setup />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="developers" element={<Developers />} />
           <Route path="reports" element={<Reports />} />
           <Route path="tickets" element={<Tickets />} />
           <Route

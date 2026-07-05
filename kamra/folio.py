@@ -492,6 +492,11 @@ def close_folio(folio_name: str) -> str:
 def run_night_audit(property: str, business_date: str | None = None) -> dict:
 	"""Automated end-of-day: open missing folios, post the night's room
 	charges for every in-house guest, flag no-shows. Idempotent per date."""
+	# In non-request contexts (the 3 AM scheduler, bench console) frappe.local.lang
+	# is unset, which makes Frappe's number/currency formatting raise
+	# UnboundLocalError. Default it so the audit runs everywhere.
+	if not getattr(frappe.local, "lang", None):
+		frappe.local.lang = "en"
 	business_date = business_date or nowdate()
 	# per property AND date — a global AUDIT-<date> name would make the
 	# second property's audit silently no-op every night

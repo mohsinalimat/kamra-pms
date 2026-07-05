@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react"
 import { ArrowLeft, Printer } from "lucide-react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { call } from "../lib/api"
 import { serverError } from "../lib/resource"
 import { Badge } from "../components/ui/badge"
@@ -91,6 +91,7 @@ interface SiblingFolio {
 
 export default function FolioView() {
   const { name } = useParams()
+  const navigate = useNavigate()
   const [data, setData] = useState<InvoiceData | null>(null)
   const [siblings, setSiblings] = useState<SiblingFolio[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -195,6 +196,32 @@ export default function FolioView() {
               Payment link
             </Button>
           )}
+          {siblings.find((s) => s.name === folio.name)?.folio_type !==
+            "Guest" &&
+            folio.charges.length === 0 &&
+            folio.payments.length === 0 &&
+            siblings.length > 1 && (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  act(async () => {
+                    await call("kamra.api.delete_folio", { folio: folio.name })
+                    const guest = siblings.find(
+                      (s) => s.folio_type === "Guest",
+                    )
+                    navigate(
+                      guest
+                        ? `/billing/${encodeURIComponent(guest.name)}`
+                        : "/billing",
+                    )
+                  })
+                }
+                title="Delete this empty split folio"
+              >
+                Delete folio
+              </Button>
+            )}
           {open && (
             <Button
               variant="outline"

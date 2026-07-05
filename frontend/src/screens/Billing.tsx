@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { MoonStar } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { call, getCurrentProperty } from "../lib/api"
-import { listResource, type Row } from "../lib/resource"
+import { listResource, serverError, type Row } from "../lib/resource"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
 import {
@@ -34,6 +34,7 @@ export default function Billing() {
   const [folios, setFolios] = useState<Row[]>([])
   const [cash, setCash] = useState<CashSummary | null>(null)
   const [audit, setAudit] = useState<AuditResult | null>(null)
+  const [auditErr, setAuditErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
 
@@ -55,12 +56,16 @@ export default function Billing() {
 
   async function runAudit() {
     setBusy(true)
+    setAuditErr(null)
+    setAudit(null)
     try {
       const res = await call<AuditResult>("kamra.api.run_night_audit", {
         property: getCurrentProperty(),
       })
       setAudit(res)
       load()
+    } catch (e) {
+      setAuditErr(serverError(e))
     } finally {
       setBusy(false)
     }
@@ -82,6 +87,13 @@ export default function Billing() {
             {busy ? "Running…" : "Run night audit"}
           </Button>
         </CardHeader>
+        {auditErr && (
+          <CardContent className="pt-0">
+            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {auditErr}
+            </p>
+          </CardContent>
+        )}
         {audit && (
           <CardContent className="pt-0">
             {audit.already_ran ? (

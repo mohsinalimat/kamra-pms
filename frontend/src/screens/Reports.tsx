@@ -9,12 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 interface Day {
   date: string
   rooms_sold: number
+  pax: number
   occupancy_pct: number
   room_revenue: number
   fnb_revenue: number
   other_revenue: number
+  total_revenue: number
   adr: number
   revpar: number
+  revpax: number
 }
 
 interface Flash {
@@ -76,20 +79,29 @@ export default function Reports() {
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <Stat
           label="Occupancy"
           value={`${t?.occupancy_pct ?? 0}%`}
           sub={`${t?.rooms_sold ?? 0} of ${d.total_rooms} rooms`}
         />
-        <Stat label="ADR" value={`₹${inr(t?.adr ?? 0)}`} />
-        <Stat label="RevPAR" value={`₹${inr(t?.revpar ?? 0)}`} />
+        <Stat label="ADR" value={`₹${inr(t?.adr ?? 0)}`} sub="room rate / room sold" />
+        <Stat label="RevPAR" value={`₹${inr(t?.revpar ?? 0)}`} sub="room rev / room" />
+        <Stat
+          label="RevPAX"
+          value={`₹${inr(t?.revpax ?? 0)}`}
+          sub={`total spend / guest · ${t?.pax ?? 0} pax`}
+        />
         <Stat
           label="Revenue (day)"
-          value={`₹${inr((t?.room_revenue ?? 0) + (t?.fnb_revenue ?? 0) + (t?.other_revenue ?? 0))}`}
-          sub={`room ₹${inr(t?.room_revenue ?? 0)} · F&B ₹${inr(t?.fnb_revenue ?? 0)}`}
+          value={`₹${inr(t?.total_revenue ?? 0)}`}
+          sub={`room ₹${inr(t?.room_revenue ?? 0)} · F&B ₹${inr(t?.fnb_revenue ?? 0)} · other ₹${inr(t?.other_revenue ?? 0)}`}
         />
       </div>
+      <p className="-mt-2 mb-4 text-xs text-zinc-400">
+        RevPAX = total guest spend (room + F&amp;B + experiences + extras) per
+        in-house guest — the ancillary revenue RevPAR can't see.
+      </p>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

@@ -340,6 +340,14 @@ export interface ReservationDetail {
 export const reservationDetail = (name: string) =>
   call<ReservationDetail>("kamra.api.reservation_detail", { reservation: name })
 
+export const developerInfo = () =>
+  call<{ user: string; has_key: boolean; base_url: string }>(
+    "kamra.api.developer_info",
+  )
+
+export const generateApiKey = () =>
+  call<{ api_key: string; api_secret: string }>("kamra.api.generate_api_key")
+
 export const amendStay = (
   reservation: string,
   check_in_date: string,

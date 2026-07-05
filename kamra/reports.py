@@ -31,15 +31,32 @@ def _day_stats(property: str, date: str, total_rooms: int) -> dict:
 		{"p": property, "d": date}, as_dict=True)[0]
 	sold = int(row.rooms_sold or 0)
 	rev = float(row.room_revenue or 0)
+	fnb = float(row.fnb_revenue or 0)
+	other = float(row.other_revenue or 0)
+	total_rev = rev + fnb + other
+	# guests (pax) in-house that night — the denominator for RevPAX
+	pax = int(frappe.db.sql(
+		"""
+		SELECT COALESCE(SUM(adults + IFNULL(children, 0)), 0)
+		FROM `tabReservation`
+		WHERE property = %(p)s AND status IN ('Checked In', 'Checked Out')
+		  AND check_in_date <= %(d)s AND check_out_date > %(d)s
+		""",
+		{"p": property, "d": date})[0][0] or 0)
 	return {
 		"date": str(date),
 		"rooms_sold": sold,
+		"pax": pax,
 		"occupancy_pct": round(100 * sold / total_rooms, 1) if total_rooms else 0,
 		"room_revenue": rev,
-		"fnb_revenue": float(row.fnb_revenue or 0),
-		"other_revenue": float(row.other_revenue or 0),
+		"fnb_revenue": fnb,
+		"other_revenue": other,
+		"total_revenue": total_rev,
 		"adr": round(rev / sold, 0) if sold else 0,
 		"revpar": round(rev / total_rooms, 0) if total_rooms else 0,
+		# RevPAX — total guest spend (room + all ancillary) per in-house guest.
+		# Captures the F&B / experiences / upgrades revenue that RevPAR misses.
+		"revpax": round(total_rev / pax, 0) if pax else 0,
 	}
 
 

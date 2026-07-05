@@ -27,6 +27,42 @@ def whoami():
 
 
 @frappe.whitelist()
+def developer_info():
+	"""REST base URL + whether the current user already has an API key.
+
+	Drives the on-site Developers page. The secret itself is never returned
+	here — Frappe stores it hashed; it's only shown once, at generation time.
+	"""
+	user = frappe.session.user
+	return {
+		"user": user,
+		"has_key": bool(frappe.db.get_value("User", user, "api_key")),
+		"base_url": frappe.utils.get_url(),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def generate_api_key():
+	"""Generate (or rotate) the current user's REST API key + secret.
+
+	Self-service: acts only on the signed-in user, so any authenticated staff
+	member can mint a key scoped to their own roles. The secret is returned
+	once here and stored hashed thereafter.
+	"""
+	user = frappe.session.user
+	if user == "Guest":
+		frappe.throw("Sign in to generate an API key.")
+	doc = frappe.get_doc("User", user)
+	api_secret = frappe.generate_hash(length=15)
+	if not doc.api_key:
+		doc.api_key = frappe.generate_hash(length=15)
+	doc.api_secret = api_secret
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"api_key": doc.api_key, "api_secret": api_secret}
+
+
+@frappe.whitelist()
 @require_roles("Revenue Manager", "Kamra Agent")
 def set_room_rate(property: str, room_type: str, start_date: str,
                   end_date: str, rate: float, reason: str = ""):
@@ -682,6 +718,27 @@ def split_folio(reservation: str, folio_type: str = "Extra"):
 	return {"folio": _split(reservation, folio_type)}
 
 
+@frappe.whitelist(methods=["POST"])
+@require_roles("Finance", "Front Desk", "Kamra Agent")
+def delete_folio(folio: str):
+	"""Remove an empty split/extra folio created by mistake.
+
+	Guards: never the primary Guest folio, and only when it carries no
+	charges and no payments — money is never dropped this way.
+	"""
+	doc = frappe.get_doc("Folio", folio)
+	if doc.folio_type == "Guest":
+		frappe.throw("The primary guest folio can't be deleted.")
+	if doc.get("charges") or doc.get("payments"):
+		frappe.throw(
+			"This folio has charges or payments — move them to another folio first."
+		)
+	if doc.docstatus == 1:
+		doc.cancel()
+	frappe.delete_doc("Folio", folio, ignore_permissions=True, force=True)
+	return {"deleted": folio}
+
+
 @frappe.whitelist()
 @require_roles("Finance", "Front Desk", "Kamra Agent")
 def transfer_folio_charge(from_folio: str, charge_row: str, to_folio: str):
@@ -847,8 +904,9 @@ def folio_invoice(folio: str):
 
 
 @frappe.whitelist()
-@require_roles()
+@require_roles("Front Desk", "Finance", "Kamra Agent")
 def run_night_audit(property: str, business_date: str | None = None):
+	# Night audit is a front-desk / night-auditor ritual, not admin-only.
 	from kamra.folio import run_night_audit as _run
 	return _run(property, business_date)
 
