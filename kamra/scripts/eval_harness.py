@@ -255,6 +255,41 @@ def t13():
 		pass
 
 
+@check("split billing: % and ₹ splits conserve totals, bulk move works")
+def t14():
+	from kamra import api
+	from kamra.folio import post_room_night, split_folio
+	g = _guest("Eval H", "+91 70000 00008")
+	res = _res(g, "2030-09-01", "2030-09-02", ROOM)
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	post_room_night(res, "2030-09-01")
+	main = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"})
+	extra = split_folio(res.name, "Extra")
+
+	fd = frappe.get_doc("Folio", main)
+	room_row = next(c for c in fd.charges if c.charge_type == "Room")
+	out = api.split_folio_charge(main, room_row.name, extra, percent=30)
+	assert out == {"kept": 2800.0, "moved": 1200.0}, out
+	a, b = frappe.get_doc("Folio", main), frappe.get_doc("Folio", extra)
+	assert a.grand_total + b.grand_total == 4200, (a.grand_total, b.grand_total)
+
+	# amount split of the split (₹200 of the ₹1200 back-ish onto a 3rd line)
+	row2 = b.charges[0]
+	out = api.split_folio_charge(extra, row2.name, main, amount=200)
+	assert out["kept"] == 1000.0 and out["moved"] == 200.0, out
+	a, b = frappe.get_doc("Folio", main), frappe.get_doc("Folio", extra)
+	assert a.grand_total + b.grand_total == 4200, (a.grand_total, b.grand_total)
+
+	# bulk transfer: move every line on main to extra in one call
+	rows = [c.name for c in a.charges]
+	api.transfer_folio_charges(main, rows, extra)
+	a, b = frappe.get_doc("Folio", main), frappe.get_doc("Folio", extra)
+	assert a.grand_total == 0 and b.grand_total == 4200, (
+		a.grand_total, b.grand_total)
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -274,7 +309,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14):
 			fn()
 	finally:
 		frappe.db.rollback(save_point="eval_start")

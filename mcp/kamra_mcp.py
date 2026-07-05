@@ -183,6 +183,18 @@ def post_stay_charge(reservation: str, charge_type: str, description: str,
 
 
 @mcp.tool()
+def split_folio_charge(from_folio: str, charge_row: str, to_folio: str,
+                       percent: float = 0, amount: float = 0) -> dict:
+    """Split one charge line between two folios of the same stay — e.g.
+    a 70/30 corporate deal or a shared room. Give percent OR amount (the
+    part that moves to to_folio). Use get_folio / reservation_folios to
+    find folio and charge row names first."""
+    return api("split_folio_charge", from_folio=from_folio,
+               charge_row=charge_row, to_folio=to_folio,
+               percent=percent or None, amount=amount or None)
+
+
+@mcp.tool()
 def update_occupants(reservation: str, occupants: list) -> dict:
     """Record everyone staying in the room (the legal hotel register,
     printed on the GRC). occupants = [{full_name, age, gender,

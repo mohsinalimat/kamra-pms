@@ -666,6 +666,36 @@ def transfer_folio_charge(from_folio: str, charge_row: str, to_folio: str):
 
 
 @frappe.whitelist()
+def transfer_folio_charges(from_folio: str, charge_rows, to_folio: str):
+	"""Bulk move: several charge lines to another folio of the stay."""
+	if isinstance(charge_rows, str):
+		charge_rows = frappe.parse_json(charge_rows)
+	from kamra.folio import transfer_charges
+	transfer_charges(from_folio, charge_rows, to_folio)
+	from kamra.savings import log_action
+	log_action("transfer_charges", "Folio", to_folio,
+	           rationale=f"Moved {len(charge_rows)} charges "
+	                     f"{from_folio} → {to_folio}")
+	return {"ok": True, "moved": len(charge_rows)}
+
+
+@frappe.whitelist()
+def split_folio_charge(from_folio: str, charge_row: str, to_folio: str,
+                       percent: float | None = None,
+                       amount: float | None = None):
+	"""Split one charge line between two folios — by percent or amount."""
+	from kamra.folio import split_charge
+	out = split_charge(from_folio, charge_row, to_folio,
+	                   percent=float(percent) if percent else None,
+	                   amount=float(amount) if amount else None)
+	from kamra.savings import log_action
+	log_action("split_charge", "Folio", to_folio,
+	           rationale=f"Split ₹{out['moved']:,.2f} of {charge_row} "
+	                     f"{from_folio} → {to_folio}")
+	return out
+
+
+@frappe.whitelist()
 def reservation_folios(reservation: str):
 	"""All folios of a stay (guest + splits) with balances."""
 	return frappe.get_all(

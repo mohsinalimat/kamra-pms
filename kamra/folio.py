@@ -244,31 +244,94 @@ def split_folio(reservation: str, folio_type: str = "Extra") -> str:
 
 def transfer_charge(from_folio: str, charge_row: str, to_folio: str):
 	"""Move one charge line between two open folios of the same stay."""
+	transfer_charges(from_folio, [charge_row], to_folio)
+
+
+def transfer_charges(from_folio: str, charge_rows: list, to_folio: str):
+	"""Move several charge lines at once — one save per folio, so a
+	corporate re-bill of a whole stay is a single operation."""
 	src = frappe.get_doc("Folio", from_folio)
 	dst = frappe.get_doc("Folio", to_folio)
 	if src.reservation != dst.reservation:
 		frappe.throw("Folios belong to different reservations.")
 	if "Closed" in (src.status, dst.status):
 		frappe.throw("Both folios must be open to transfer charges.")
-	row = next((c for c in src.charges if c.name == charge_row), None)
-	if not row:
-		frappe.throw(f"Charge {charge_row} not found on {from_folio}.")
-	dst.append("charges", {
-		"posting_date": row.posting_date,
-		"charge_type": row.charge_type,
-		"description": row.description,
-		"qty": row.qty,
-		"rate": row.rate,
-		"amount": row.amount,
-		"gst_rate": row.gst_rate,
-		"auto_posted": row.auto_posted,
-		"is_alcohol": row.get("is_alcohol"),
-	})
-	src.charges.remove(row)
+	for charge_row in charge_rows:
+		row = next((c for c in src.charges if c.name == charge_row), None)
+		if not row:
+			frappe.throw(f"Charge {charge_row} not found on {from_folio}.")
+		if row.get("is_alcohol") and dst.folio_type == "Company":
+			frappe.throw("Alcohol cannot be billed to a company folio.")
+		dst.append("charges", {
+			"posting_date": row.posting_date,
+			"charge_type": row.charge_type,
+			"description": row.description,
+			"qty": row.qty,
+			"rate": row.rate,
+			"amount": row.amount,
+			"gst_rate": row.gst_rate,
+			"auto_posted": row.auto_posted,
+			"is_alcohol": row.get("is_alcohol"),
+		})
+		src.charges.remove(row)
 	_recalculate(src)
 	_recalculate(dst)
 	src.save(ignore_permissions=True)
 	dst.save(ignore_permissions=True)
+
+
+def split_charge(from_folio: str, charge_row: str, to_folio: str,
+                 percent: float | None = None,
+                 amount: float | None = None) -> dict:
+	"""Split one charge line between two open folios of the same stay —
+	the 70/30 corporate deal, the shared room, the disputed minibar.
+	Give either a percent (of the line) or an absolute amount to move.
+	Conservation is exact: source keeps base − part, target gets part."""
+	src = frappe.get_doc("Folio", from_folio)
+	dst = frappe.get_doc("Folio", to_folio)
+	if from_folio == to_folio:
+		frappe.throw("Pick a different folio to split into.")
+	if src.reservation != dst.reservation:
+		frappe.throw("Folios belong to different reservations.")
+	if "Closed" in (src.status, dst.status):
+		frappe.throw("Both folios must be open to split charges.")
+	row = next((c for c in src.charges if c.name == charge_row), None)
+	if not row:
+		frappe.throw(f"Charge {charge_row} not found on {from_folio}.")
+	base = Decimal(str(row.amount or 0))
+	if base <= 0:
+		frappe.throw("Only positive charge lines can be split.")
+	if percent:
+		part = (base * Decimal(str(percent)) / 100).quantize(Decimal("0.01"))
+	elif amount:
+		part = Decimal(str(amount)).quantize(Decimal("0.01"))
+	else:
+		frappe.throw("Give a percent or an amount to split off.")
+	if part <= 0 or part >= base:
+		frappe.throw(f"Split must be between 0 and ₹{base} (exclusive).")
+	if row.get("is_alcohol") and dst.folio_type == "Company":
+		frappe.throw("Alcohol cannot be billed to a company folio.")
+
+	remainder = base - part
+	row.amount = float(remainder)
+	row.rate = float(remainder)
+	row.qty = 1
+	dst.append("charges", {
+		"posting_date": row.posting_date,
+		"charge_type": row.charge_type,
+		"description": f"{row.description} · split",
+		"qty": 1,
+		"rate": float(part),
+		"amount": float(part),
+		"gst_rate": row.gst_rate,
+		"auto_posted": row.auto_posted,
+		"is_alcohol": row.get("is_alcohol"),
+	})
+	_recalculate(src)
+	_recalculate(dst)
+	src.save(ignore_permissions=True)
+	dst.save(ignore_permissions=True)
+	return {"kept": float(remainder), "moved": float(part)}
 
 
 def close_folio(folio_name: str) -> str:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useState } from "react"
 import { ArrowLeft, Printer } from "lucide-react"
 import { Link, useParams } from "react-router-dom"
 import { call } from "../lib/api"
@@ -96,6 +96,10 @@ export default function FolioView() {
     charge_type: "Food & Beverage", description: "", amount: "", gst_rate: "5",
     is_alcohol: false,
   })
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [splitFor, setSplitFor] = useState<string | null>(null)
+  const [splitVal, setSplitVal] = useState("50%")
+  const [splitTarget, setSplitTarget] = useState("")
   const [payment, setPayment] = useState({ mode: "UPI", amount: "", reference: "" })
 
   const load = useCallback(() => {
@@ -268,68 +272,198 @@ export default function FolioView() {
             </p>
           </div>
 
-          <table className="mb-5 w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                <th className="py-2 pr-3">Date</th>
-                <th className="py-2 pr-3">Item</th>
-                <th className="py-2 pr-3 text-right">Amount ₹</th>
-                <th className="py-2 pr-3 text-right">GST %</th>
-                <th className="py-2 pr-3 text-right">GST ₹</th>
-                <th className="py-2 text-right">Total ₹</th>
-                {open && siblings.filter((s) => s.status === "Open").length > 1 && (
-                  <th className="py-2 pl-3 print:hidden" aria-label="Move" />
+          {(() => {
+            const targets = siblings.filter(
+              (s) => s.status === "Open" && s.name !== folio.name,
+            )
+            const routable = open && targets.length > 0
+            return (
+              <>
+                {routable && selected.size > 0 && (
+                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm print:hidden">
+                    <span className="font-medium">
+                      {selected.size} line{selected.size > 1 ? "s" : ""} selected
+                    </span>
+                    <select
+                      className="rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-xs"
+                      value=""
+                      aria-label="Move selected charges to folio"
+                      onChange={(e) => {
+                        const to = e.target.value
+                        if (!to) return
+                        act(async () => {
+                          await call("kamra.api.transfer_folio_charges", {
+                            from_folio: folio.name,
+                            charge_rows: [...selected],
+                            to_folio: to,
+                          })
+                          setSelected(new Set())
+                        })
+                      }}
+                    >
+                      <option value="">Move all to…</option>
+                      {targets.map((s) => (
+                        <option key={s.name} value={s.name}>
+                          → {s.folio_type}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="text-xs text-zinc-400 hover:text-zinc-700"
+                      onClick={() => setSelected(new Set())}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {folio.charges.map((c, i) => (
-                <tr key={i}>
-                  <td className="py-2 pr-3 text-zinc-500">{c.posting_date}</td>
-                  <td className="py-2 pr-3">
-                    <span className="font-medium">{c.charge_type}</span>
-                    {c.description && (
-                      <span className="text-zinc-500"> — {c.description}</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3 text-right">{inr(c.amount)}</td>
-                  <td className="py-2 pr-3 text-right">{c.gst_rate}%</td>
-                  <td className="py-2 pr-3 text-right">{inr(c.gst_amount)}</td>
-                  <td className="py-2 text-right font-medium">{inr(c.total)}</td>
-                  {open && siblings.filter((s) => s.status === "Open").length > 1 && (
-                    <td className="py-2 pl-3 text-right print:hidden">
-                      <select
-                        className="rounded-md border border-zinc-200 px-1.5 py-1 text-xs text-zinc-500"
-                        value=""
-                        aria-label="Move charge to another folio"
-                        onChange={(e) =>
-                          e.target.value &&
-                          act(() =>
-                            call("kamra.api.transfer_folio_charge", {
-                              from_folio: folio.name,
-                              charge_row: c.name,
-                              to_folio: e.target.value,
-                            }),
-                          )
-                        }
-                      >
-                        <option value="">Move…</option>
-                        {siblings
-                          .filter(
-                            (s) => s.status === "Open" && s.name !== folio.name,
-                          )
-                          .map((s) => (
-                            <option key={s.name} value={s.name}>
-                              → {s.folio_type}
-                            </option>
-                          ))}
-                      </select>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                <table className="mb-5 w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      {routable && (
+                        <th className="w-6 py-2 pr-2 print:hidden" aria-label="Select" />
+                      )}
+                      <th className="py-2 pr-3">Date</th>
+                      <th className="py-2 pr-3">Item</th>
+                      <th className="py-2 pr-3 text-right">Amount ₹</th>
+                      <th className="py-2 pr-3 text-right">GST %</th>
+                      <th className="py-2 pr-3 text-right">GST ₹</th>
+                      <th className="py-2 text-right">Total ₹</th>
+                      {routable && (
+                        <th className="py-2 pl-3 print:hidden" aria-label="Actions" />
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {folio.charges.map((c, i) => (
+                      <Fragment key={c.name ?? i}>
+                        <tr>
+                          {routable && (
+                            <td className="py-2 pr-2 print:hidden">
+                              <input
+                                type="checkbox"
+                                className="size-3.5 accent-brand-600"
+                                aria-label="Select charge"
+                                checked={selected.has(c.name)}
+                                onChange={(e) =>
+                                  setSelected((prev) => {
+                                    const next = new Set(prev)
+                                    if (e.target.checked) next.add(c.name)
+                                    else next.delete(c.name)
+                                    return next
+                                  })
+                                }
+                              />
+                            </td>
+                          )}
+                          <td className="py-2 pr-3 text-zinc-500">{c.posting_date}</td>
+                          <td className="py-2 pr-3">
+                            <span className="font-medium">{c.charge_type}</span>
+                            {c.description && (
+                              <span className="text-zinc-500"> — {c.description}</span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-right">{inr(c.amount)}</td>
+                          <td className="py-2 pr-3 text-right">{c.gst_rate}%</td>
+                          <td className="py-2 pr-3 text-right">{inr(c.gst_amount)}</td>
+                          <td className="py-2 text-right font-medium">{inr(c.total)}</td>
+                          {routable && (
+                            <td className="whitespace-nowrap py-2 pl-3 text-right print:hidden">
+                              <button
+                                className="mr-2 text-xs font-medium text-zinc-400 hover:text-zinc-700"
+                                onClick={() => {
+                                  setSplitFor(splitFor === c.name ? null : c.name)
+                                  setSplitTarget(targets[0]?.name ?? "")
+                                }}
+                              >
+                                Split
+                              </button>
+                              <select
+                                className="rounded-md border border-zinc-200 px-1.5 py-1 text-xs text-zinc-500"
+                                value=""
+                                aria-label="Move charge to another folio"
+                                onChange={(e) =>
+                                  e.target.value &&
+                                  act(() =>
+                                    call("kamra.api.transfer_folio_charge", {
+                                      from_folio: folio.name,
+                                      charge_row: c.name,
+                                      to_folio: e.target.value,
+                                    }),
+                                  )
+                                }
+                              >
+                                <option value="">Move…</option>
+                                {targets.map((s) => (
+                                  <option key={s.name} value={s.name}>
+                                    → {s.folio_type}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          )}
+                        </tr>
+                        {routable && splitFor === c.name && (
+                          <tr className="print:hidden">
+                            <td colSpan={8} className="bg-zinc-50 px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-2 text-sm">
+                                <span className="text-zinc-500">
+                                  Split ₹{inr(c.amount)} —
+                                </span>
+                                <input
+                                  className="w-20 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs"
+                                  aria-label="Split share (percent or amount)"
+                                  value={splitVal}
+                                  onChange={(e) => setSplitVal(e.target.value)}
+                                />
+                                <span className="text-xs text-zinc-400">
+                                  ("30%" or "1500")
+                                </span>
+                                <span className="text-zinc-500">to</span>
+                                <select
+                                  className="rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-xs"
+                                  aria-label="Split target folio"
+                                  value={splitTarget}
+                                  onChange={(e) => setSplitTarget(e.target.value)}
+                                >
+                                  {targets.map((s) => (
+                                    <option key={s.name} value={s.name}>
+                                      {s.folio_type}
+                                    </option>
+                                  ))}
+                                </select>
+                                <Button
+                                  variant="outline"
+                                  disabled={busy || !splitTarget || !splitVal.trim()}
+                                  onClick={() => {
+                                    const v = splitVal.trim()
+                                    const isPct = v.endsWith("%")
+                                    const num = Number(v.replace("%", ""))
+                                    if (!num || num <= 0) return
+                                    act(async () => {
+                                      await call("kamra.api.split_folio_charge", {
+                                        from_folio: folio.name,
+                                        charge_row: c.name,
+                                        to_folio: splitTarget,
+                                        percent: isPct ? num : null,
+                                        amount: isPct ? null : num,
+                                      })
+                                      setSplitFor(null)
+                                    })
+                                  }}
+                                >
+                                  Split
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )
+          })()}
 
           <div className="mb-6 grid gap-6 sm:grid-cols-2">
             <div>
