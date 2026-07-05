@@ -18,6 +18,24 @@ scheduler_events = {
 
 required_apps = ["payments"]
 
+# Served single-page app
+# -----------------------
+# The React front-end mounts at /kamra and owns all client-side routes
+# (front desk, booking engine, housekeeping, self check-in). The `kamra` www
+# page (kamra/www/kamra.py) serves the built shell with the CSRF token
+# injected; every deep link falls through to it so browser refresh works.
+website_route_rules = [
+	{"from_route": "/kamra/<path:app_path>", "to_route": "kamra"},
+]
+
+# Clean, shareable guest URLs redirect into the SPA's routes.
+website_redirects = [
+	{"source": r"/book$", "target": "/kamra/book"},
+	{"source": r"/book/(.*)", "target": r"/kamra/book/\1"},
+	{"source": r"/hk$", "target": "/kamra/hk"},
+	{"source": r"/checkin/(.*)", "target": r"/kamra/checkin/\1"},
+]
+
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{

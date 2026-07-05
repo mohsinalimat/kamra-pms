@@ -2,11 +2,24 @@
 // Frappe's /api/method/login; unauthenticated calls surface as 401/403
 // and the shell shows the login screen.
 
+// The served boot page injects the session's CSRF token as window.csrf_token
+// (see kamra/www/kamra.py). Frappe enforces it on POSTs from a logged-in
+// session; guests and the dev server (ignore_csrf) don't need it.
+function csrfToken(): string | undefined {
+  const t = (window as unknown as { csrf_token?: string }).csrf_token
+  return t && t !== "None" ? t : undefined
+}
+
 async function doFetch(path: string, init?: RequestInit) {
+  const token = csrfToken()
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
     ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "X-Frappe-CSRF-Token": token } : {}),
+      ...(init?.headers as Record<string, string> | undefined),
+    },
+    credentials: "include",
   })
   if (!res.ok) {
     const body = await res.text()

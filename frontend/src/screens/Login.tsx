@@ -1,6 +1,7 @@
 import { useState } from "react"
 
 import { login } from "../lib/api"
+import { asset } from "../lib/asset"
 import { Button } from "../components/ui/button"
 
 const inputCls =
@@ -26,6 +27,14 @@ export default function Login(props: { onSuccess: () => void }) {
     setError(null)
     try {
       await login(u, p)
+      // A successful login rotates the session's CSRF token. In production
+      // the token was injected into the served page for the *guest* session,
+      // so reload to re-boot with the authenticated token before any
+      // (CSRF-checked) POST fires. Dev runs with ignore_csrf, so soft-swap.
+      if (import.meta.env.PROD) {
+        window.location.reload()
+        return
+      }
       props.onSuccess()
     } catch {
       setError("Wrong email or password.")
@@ -38,7 +47,7 @@ export default function Login(props: { onSuccess: () => void }) {
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-2">
-          <img src="/kamra-mark.svg" alt="Kamra" className="size-16" />
+          <img src={asset("kamra-mark.svg")} alt="Kamra" className="size-16" />
           <span className="text-2xl font-semibold tracking-tight">
             kamra
             <span className="ml-1.5 align-middle text-xs font-semibold tracking-[0.25em] text-brand-600">

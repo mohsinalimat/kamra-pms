@@ -2,9 +2,18 @@ import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig } from "vite"
 
-// Dev proxy: the Frappe bench serves kamra.localhost on :8000.
-export default defineConfig({
+// Dev (`vite`): served at / on :5173, proxying /api to the Frappe bench.
+// Build (`vite build`): emits into the Frappe app's public/ folder, which
+// Frappe serves at /assets/kamra/frontend/. The served SPA mounts at /kamra
+// (see the router basename in main.tsx and website_route_rules in hooks.py).
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? "/assets/kamra/frontend/" : "/",
   plugins: [react(), tailwindcss()],
+  build: {
+    outDir: "../kamra/public/frontend",
+    emptyOutDir: true,
+    sourcemap: false,
+  },
   server: {
     port: 5173,
     proxy: {
@@ -14,4 +23,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
