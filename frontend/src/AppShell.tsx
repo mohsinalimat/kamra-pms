@@ -19,6 +19,7 @@ import {
   Receipt,
   Settings as SettingsIcon,
   Code2,
+  ExternalLink,
   Sun,
   ShieldCheck,
   Tags,
@@ -60,7 +61,8 @@ export interface ShellContext {
 }
 
 interface NavItem {
-  to: string
+  to?: string
+  href?: string // external link (e.g. the Frappe Desk), opens in a new tab
   label: string
   icon: React.ComponentType<{ className?: string }>
 }
@@ -139,6 +141,7 @@ const NAV: NavGroup[] = [
       { to: "/settings", label: "Settings", icon: SettingsIcon },
       { to: "/developers", label: "Developers", icon: Code2 },
       { to: "/setup", label: "New Property", icon: Plus },
+      { href: "/app", label: "Frappe Desk", icon: ExternalLink },
     ],
   },
 ]
@@ -236,24 +239,37 @@ export default function AppShell() {
               <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
                 {group.label}
               </div>
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === "/"}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium",
-                      isActive
-                        ? "bg-brand-50 text-brand-700"
-                        : "text-zinc-600 hover:bg-zinc-100",
-                    )
-                  }
-                >
-                  <item.icon className="size-4" aria-hidden />
-                  {item.label}
-                </NavLink>
-              ))}
+              {group.items.map((item) =>
+                item.href ? (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+                  >
+                    <item.icon className="size-4" aria-hidden />
+                    {item.label}
+                  </a>
+                ) : (
+                  <NavLink
+                    key={item.to}
+                    to={item.to!}
+                    end={item.to === "/"}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium",
+                        isActive
+                          ? "bg-brand-50 text-brand-700"
+                          : "text-zinc-600 hover:bg-zinc-100",
+                      )
+                    }
+                  >
+                    <item.icon className="size-4" aria-hidden />
+                    {item.label}
+                  </NavLink>
+                ),
+              )}
             </div>
           ))}
         </nav>
