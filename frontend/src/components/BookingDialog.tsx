@@ -51,7 +51,14 @@ export function BookingDialog(props: {
     children: 0,
     meal_plan: "",
     voucher_code: "",
+    company: "",
+    travel_agent: "",
+    booked_by_name: "",
+    booked_by_phone: "",
+    booker_relation: "",
+    contact_preference: "Booker",
   })
+  const [onBehalf, setOnBehalf] = useState(false)
 
   useEffect(() => {
     getBookingOptions().then((o) => {
@@ -133,6 +140,18 @@ export function BookingDialog(props: {
         children: form.children,
         meal_plan: form.meal_plan || undefined,
         voucher_code: form.voucher_code || undefined,
+        company: form.company || undefined,
+        travel_agent: form.travel_agent || undefined,
+        booking_type: form.company ? "Corporate" : undefined,
+        booked_by_name: onBehalf ? form.booked_by_name || undefined : undefined,
+        booked_by_phone: onBehalf
+          ? form.booked_by_phone || undefined
+          : undefined,
+        booker_relation: onBehalf
+          ? form.booker_relation || undefined
+          : undefined,
+        contact_preference:
+          onBehalf && form.booked_by_name ? form.contact_preference : undefined,
       })
       setDone({ ref: res.reservation, room: res.room })
       props.onBooked()
@@ -296,6 +315,109 @@ export function BookingDialog(props: {
                     placeholder="WELCOME10"
                   />
                 </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Company (bill corporate)">
+                  <select
+                    className={inputCls}
+                    value={form.company}
+                    onChange={(e) => set("company", e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {options?.companies.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        {c.company_name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Travel agent">
+                  <select
+                    className={inputCls}
+                    value={form.travel_agent}
+                    onChange={(e) => set("travel_agent", e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {options?.travel_agents.map((t) => (
+                      <option key={t.name} value={t.name}>
+                        {t.agent_name} ({t.commission_pct}%)
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              <div className="rounded-xl border border-zinc-200 px-4 py-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-brand-600"
+                    checked={onBehalf}
+                    onChange={(e) => setOnBehalf(e.target.checked)}
+                  />
+                  Booked on someone's behalf
+                </label>
+                {onBehalf && (
+                  <div className="mt-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Booker name">
+                        <input
+                          className={inputCls}
+                          value={form.booked_by_name}
+                          onChange={(e) =>
+                            set("booked_by_name", e.target.value)
+                          }
+                          placeholder="Who arranged this stay"
+                        />
+                      </Field>
+                      <Field label="Booker phone">
+                        <input
+                          className={inputCls}
+                          value={form.booked_by_phone}
+                          onChange={(e) =>
+                            set("booked_by_phone", e.target.value)
+                          }
+                          placeholder="+91 …"
+                        />
+                      </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Relation">
+                        <select
+                          className={inputCls}
+                          value={form.booker_relation}
+                          onChange={(e) =>
+                            set("booker_relation", e.target.value)
+                          }
+                        >
+                          <option value="">—</option>
+                          {[
+                            "Assistant",
+                            "Family",
+                            "Company Travel Desk",
+                            "Travel Agent",
+                          ].map((r) => (
+                            <option key={r}>{r}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Send links & updates to">
+                        <select
+                          className={inputCls}
+                          value={form.contact_preference}
+                          onChange={(e) =>
+                            set("contact_preference", e.target.value)
+                          }
+                        >
+                          <option value="Booker">Booker</option>
+                          <option value="Guest">Guest</option>
+                          <option value="Both">Both</option>
+                        </select>
+                      </Field>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

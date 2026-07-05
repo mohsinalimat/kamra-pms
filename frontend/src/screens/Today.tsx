@@ -85,6 +85,20 @@ function ReservationList(props: {
               {row.nights} night{row.nights === 1 ? "" : "s"} · {row.adults} ad
               {row.children ? ` + ${row.children} ch` : ""}
               {row.eta && ` · ETA ${row.eta}`}
+              {row.booked_by_name && (
+                <span
+                  title={
+                    (row.booked_by_phone
+                      ? `${row.booked_by_phone} · `
+                      : "") +
+                    `send links & updates to: ${row.contact_preference ?? "Booker"}`
+                  }
+                >
+                  {" "}
+                  · via {row.booked_by_name}
+                  {row.booker_relation ? ` (${row.booker_relation})` : ""}
+                </span>
+              )}
               {row.status === "Confirmed" && (
                 <a
                   href={`/grc/${encodeURIComponent(row.name)}`}
@@ -105,7 +119,13 @@ function ReservationList(props: {
                         `${window.location.origin}/checkin/${row.precheckin_token}`,
                       )
                     }}
-                    title="Copy the guest's self check-in link"
+                    title={`Copy the self check-in link — send to the ${
+                      row.contact_preference === "Booker" && row.booked_by_name
+                        ? `booker, ${row.booked_by_name}${row.booked_by_phone ? ` (${row.booked_by_phone})` : ""}`
+                        : row.contact_preference === "Both" && row.booked_by_name
+                          ? `guest and the booker (${row.booked_by_name})`
+                          : "guest"
+                    }`}
                   >
                     copy check-in link
                   </button>

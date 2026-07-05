@@ -802,6 +802,9 @@ def folio_invoice(folio: str):
 			"nights": res.nights, "room": res.room,
 			"company": res.company,
 			"group_booking": res.get("group_booking"),
+			"booked_by_name": res.get("booked_by_name"),
+			"booked_by_phone": res.get("booked_by_phone"),
+			"contact_preference": res.get("contact_preference"),
 		},
 		"gst_summary": [
 			{"rate": rate, "taxable": v["taxable"],
@@ -990,7 +993,8 @@ def front_desk_snapshot(property: str | None = None, date: str | None = None):
 		"name", "guest_name", "room_type", "room", "status", "source",
 		"check_in_date", "check_out_date", "nights", "adults", "children",
 		"special_requests", "channel", "precheckin_status", "eta",
-		"precheckin_token",
+		"precheckin_token", "booked_by_name", "booked_by_phone",
+		"booker_relation", "contact_preference", "company",
 	]
 
 	arrivals = frappe.get_all(
@@ -1244,6 +1248,11 @@ def booking_options(property: str):
 			"Company", filters={"disabled": 0},
 			fields=["name", "company_name", "negotiated_rate_plan"],
 		),
+		"travel_agents": frappe.get_all(
+			"Travel Agent", filters={"disabled": 0},
+			fields=["name", "agent_name", "commission_pct"],
+			order_by="agent_name asc",
+		),
 	}
 
 
@@ -1288,7 +1297,8 @@ def create_booking(property: str, room_type: str, check_in_date: str,
                    travel_agent: str | None = None,
                    booked_by_name: str | None = None,
                    booked_by_phone: str | None = None,
-                   booker_relation: str | None = None):
+                   booker_relation: str | None = None,
+                   contact_preference: str | None = None):
 	"""One-call booking: guest dedup by phone, optional auto room
 	assignment, voucher applied, price computed by the engine."""
 	guest = _find_or_create_guest(guest_name, phone)
@@ -1329,7 +1339,8 @@ def create_booking(property: str, room_type: str, check_in_date: str,
 		"booked_by_name": booked_by_name or None,
 		"booked_by_phone": booked_by_phone or None,
 		"booker_relation": booker_relation or None,
-		"contact_preference": "Booker" if booked_by_name else "Guest",
+		"contact_preference": contact_preference
+			or ("Booker" if booked_by_name else "Guest"),
 		"auto_price": 1,
 	})
 	doc.insert(ignore_permissions=False)

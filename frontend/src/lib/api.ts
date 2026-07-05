@@ -77,6 +77,11 @@ export interface ReservationRow {
   precheckin_status: "Not Started" | "Submitted" | "Verified" | null
   eta: string | null
   precheckin_token: string | null
+  booked_by_name: string | null
+  booked_by_phone: string | null
+  booker_relation: string | null
+  contact_preference: "Guest" | "Booker" | "Both" | null
+  company: string | null
 }
 
 export interface RoomRow {
@@ -133,6 +138,7 @@ export interface BookingOptions {
   }[]
   rate_plans: { name: string; rate_plan_name: string; code: string }[]
   companies: { name: string; company_name: string }[]
+  travel_agents: { name: string; agent_name: string; commission_pct: number }[]
 }
 
 export interface Quote {
@@ -202,7 +208,17 @@ export const getQuote = (params: QuoteParams) =>
   call<Quote>("kamra.api.get_quote", { property: getCurrentProperty(), ...params })
 
 export const createBooking = (
-  params: QuoteParams & { guest_name: string; phone?: string },
+  params: QuoteParams & {
+    guest_name: string
+    phone?: string
+    company?: string
+    travel_agent?: string
+    booking_type?: string
+    booked_by_name?: string
+    booked_by_phone?: string
+    booker_relation?: string
+    contact_preference?: string
+  },
 ) =>
   call<{ reservation: string; room: string | null; amount_after_tax: number }>(
     "kamra.api.create_booking",

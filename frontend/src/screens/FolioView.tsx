@@ -58,6 +58,9 @@ interface InvoiceData {
     room: string | null
     company: string | null
     group_booking: string | null
+    booked_by_name: string | null
+    booked_by_phone: string | null
+    contact_preference: string | null
   }
   gst_summary: {
     rate: number
@@ -179,7 +182,15 @@ export default function FolioView() {
                   navigator.clipboard.writeText(r.url)
                 })
               }
-              title="Creates a Razorpay link for the balance and copies it"
+              title={`Creates a payment link for the balance and copies it — send to the ${
+                data.stay.contact_preference === "Booker" &&
+                data.stay.booked_by_name
+                  ? `booker, ${data.stay.booked_by_name}${data.stay.booked_by_phone ? ` (${data.stay.booked_by_phone})` : ""}`
+                  : data.stay.contact_preference === "Both" &&
+                      data.stay.booked_by_name
+                    ? `guest and the booker (${data.stay.booked_by_name})`
+                    : "guest"
+              }`}
             >
               Payment link
             </Button>
