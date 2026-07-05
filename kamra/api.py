@@ -7,6 +7,7 @@ surface serves the React console today and the MCP layer next.
 import json
 
 import frappe
+from kamra.authz import require_roles
 from frappe.utils import add_days, nowdate
 
 
@@ -22,6 +23,7 @@ def whoami():
 
 
 @frappe.whitelist()
+@require_roles("Revenue Manager", "Kamra Agent")
 def set_room_rate(property: str, room_type: str, start_date: str,
                   end_date: str, rate: float, reason: str = ""):
 	"""Set the nightly rate for a room type over a date range — bounded by
@@ -84,6 +86,7 @@ def set_room_rate(property: str, room_type: str, start_date: str,
 
 
 @frappe.whitelist()
+@require_roles()
 def owner_briefing(property: str, date: str | None = None):
 	"""Deterministic numbers for the owner's morning briefing (PRD FR-70).
 	An LLM turns this into prose; it never invents the figures."""
@@ -296,6 +299,7 @@ def import_bookings(property: str, bookings):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def registration_card(reservation: str):
 	"""Everything the printed GRC (guest registration card) needs."""
 	res = frappe.get_doc("Reservation", reservation)
@@ -344,6 +348,7 @@ def registration_card(reservation: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def cash_summary(property: str, date: str | None = None):
 	"""Cashier reconciliation: what the system says was collected today,
 	per payment mode — the number the drawer must match at shift close."""
@@ -363,6 +368,7 @@ def cash_summary(property: str, date: str | None = None):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def record_advance(reservation: str, amount: float, mode: str = "UPI",
                    reference: str | None = None):
 	"""Advance/deposit against a Confirmed booking — opens the folio early
@@ -391,12 +397,14 @@ def record_advance(reservation: str, amount: float, mode: str = "UPI",
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def folio_payment_link(folio: str):
 	from kamra.payments import create_payment_link
 	return create_payment_link(folio)
 
 
 @frappe.whitelist()
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
 def hk_queue(property: str):
 	"""The housekeeper's phone view: prioritized task queue + room board.
 	Checkout cleans for rooms with an arrival today jump the queue."""
@@ -441,6 +449,7 @@ def hk_queue(property: str):
 
 
 @frappe.whitelist()
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
 def hk_update_task(task: str, status: str):
 	"""Start or complete a housekeeping task from the phone."""
 	if status not in ("In Progress", "Done", "Verified"):
@@ -458,6 +467,7 @@ def hk_update_task(task: str, status: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def create_ticket(property: str, subject: str, category: str,
                   priority: str = "Medium", room: str | None = None,
                   reservation: str | None = None, guest: str | None = None,
@@ -487,6 +497,7 @@ def create_ticket(property: str, subject: str, category: str,
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def tickets_list(property: str, show_closed: int = 0):
 	filters = {"property": property}
 	if not int(show_closed):
@@ -510,6 +521,7 @@ def tickets_list(property: str, show_closed: int = 0):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def advance_ticket(ticket: str, status: str, resolution_note: str | None = None):
 	allowed = {"In Progress", "Resolved", "Closed", "Cancelled"}
 	if status not in allowed:
@@ -524,6 +536,7 @@ def advance_ticket(ticket: str, status: str, resolution_note: str | None = None)
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def get_folio(reservation: str):
 	"""Folio for a reservation — opens one if the guest is checked in."""
 	name = frappe.db.get_value(
@@ -540,6 +553,7 @@ def get_folio(reservation: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def add_folio_charge(folio: str, charge_type: str, description: str,
                      amount: float, gst_rate: float = 0,
                      posting_date: str | None = None, is_alcohol: int = 0,
@@ -571,6 +585,7 @@ def add_folio_charge(folio: str, charge_type: str, description: str,
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def add_folio_payment(folio: str, mode: str, amount: float,
                       reference: str | None = None):
 	doc = frappe.get_doc("Folio", folio)
@@ -587,6 +602,7 @@ def add_folio_payment(folio: str, mode: str, amount: float,
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def post_stay_charge(reservation: str, charge_type: str, description: str,
                      amount: float, gst_rate: float = 0, is_alcohol: int = 0):
 	"""Post a charge to a stay letting the billing rules pick the folio —
@@ -606,6 +622,7 @@ def post_stay_charge(reservation: str, charge_type: str, description: str,
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def set_billing_rules(company: str, rules):
 	"""Replace a company's billing rules. rules = [{charge_type, pay_by}]."""
 	if isinstance(rules, str):
@@ -622,6 +639,7 @@ def set_billing_rules(company: str, rules):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def get_billing_rules(company: str):
 	doc = frappe.get_doc("Company", company)
 	return [{"charge_type": r.charge_type, "pay_by": r.pay_by}
@@ -629,6 +647,7 @@ def get_billing_rules(company: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def update_occupants(reservation: str, occupants):
 	"""Replace the stay's occupant register.
 	occupants = [{full_name, age, gender, nationality, id_type, id_number, phone}]"""
@@ -653,12 +672,14 @@ def update_occupants(reservation: str, occupants):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def split_folio(reservation: str, folio_type: str = "Extra"):
 	from kamra.folio import split_folio as _split
 	return {"folio": _split(reservation, folio_type)}
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def transfer_folio_charge(from_folio: str, charge_row: str, to_folio: str):
 	from kamra.folio import transfer_charge
 	transfer_charge(from_folio, charge_row, to_folio)
@@ -669,6 +690,7 @@ def transfer_folio_charge(from_folio: str, charge_row: str, to_folio: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def transfer_folio_charges(from_folio: str, charge_rows, to_folio: str):
 	"""Bulk move: several charge lines to another folio of the stay."""
 	if isinstance(charge_rows, str):
@@ -683,6 +705,7 @@ def transfer_folio_charges(from_folio: str, charge_rows, to_folio: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def split_folio_charge(from_folio: str, charge_row: str, to_folio: str,
                        percent: float | None = None,
                        amount: float | None = None):
@@ -703,6 +726,7 @@ _FOLIO_LIST_FIELDS = ["name", "folio_type", "status", "invoice_number",
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def reservation_folios(reservation: str):
 	"""All folios of a stay (guest + splits) with balances — plus the
 	group master folio when the stay belongs to a group, so charges can
@@ -725,6 +749,7 @@ def reservation_folios(reservation: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def group_master_folio(group_booking: str):
 	"""Get-or-create the group's consolidated company folio."""
 	from kamra.folio import open_group_folio
@@ -732,6 +757,7 @@ def group_master_folio(group_booking: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def group_folios(group_booking: str):
 	"""The whole group's billing picture: the master folio plus every
 	member reservation's folios, with balances."""
@@ -752,6 +778,7 @@ def group_folios(group_booking: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def close_folio(folio: str):
 	from kamra.folio import close_folio as _close
 	invoice_number = _close(folio)
@@ -759,6 +786,7 @@ def close_folio(folio: str):
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def folio_invoice(folio: str):
 	"""Everything a GST invoice print needs, with the multi-rate breakup."""
 	doc = frappe.get_doc("Folio", folio)
@@ -815,12 +843,14 @@ def folio_invoice(folio: str):
 
 
 @frappe.whitelist()
+@require_roles()
 def run_night_audit(property: str, business_date: str | None = None):
 	from kamra.folio import run_night_audit as _run
 	return _run(property, business_date)
 
 
 @frappe.whitelist()
+@require_roles()
 def gstr1_rows(from_date: str, to_date: str):
 	"""Invoice-level rows for a GSTR-1 style export (v0: B2C summary)."""
 	folios = frappe.get_all(
@@ -837,6 +867,7 @@ def gstr1_rows(from_date: str, to_date: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def guests_with_stats(search: str | None = None):
 	"""Guest list with stay stats — the CRM index."""
 	where = ""
@@ -866,6 +897,7 @@ def guests_with_stats(search: str | None = None):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def guest_search(q: str):
 	"""Typeahead for attaching a booking to an existing profile."""
 	q = (q or "").strip()
@@ -894,6 +926,7 @@ _GUEST_LINKS = [  # every doctype that points at a Guest
 
 
 @frappe.whitelist()
+@require_roles()
 def merge_guests(source: str, target: str):
 	"""Merge a duplicate profile into the surviving one: every linked
 	document is repointed, missing contact fields are copied over, and
@@ -939,6 +972,7 @@ def merge_guests(source: str, target: str):
 
 
 @frappe.whitelist()
+@require_roles()
 def anonymize_guest(guest: str):
 	"""Right-to-erasure: strip everything that identifies the person while
 	keeping stays and bills intact for the books. Irreversible."""
@@ -975,6 +1009,7 @@ def anonymize_guest(guest: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def guest_journey(guest: str):
 	"""One guest's full story: profile, stats, chronological timeline.
 	This is the CRM detail view — and the context an AI concierge loads
@@ -1091,6 +1126,7 @@ def my_properties():
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def front_desk_snapshot(property: str | None = None, date: str | None = None):
 	"""Everything the front desk needs for one day, in one call."""
 	date = date or nowdate()
@@ -1187,6 +1223,7 @@ def front_desk_snapshot(property: str | None = None, date: str | None = None):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def check_in(reservation: str, room: str | None = None):
 	doc = frappe.get_doc("Reservation", reservation)
 	if room:
@@ -1242,6 +1279,7 @@ def _cancellation_terms(res):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def cancellation_preview(reservation: str):
 	"""What cancelling right now would cost — shown before confirming."""
 	res = frappe.get_doc("Reservation", reservation)
@@ -1254,6 +1292,7 @@ CANCEL_REASONS = ["Guest request", "Change of plans", "Duplicate booking",
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def cancel_reservation(reservation: str, reason: str = "Guest request",
                        note: str | None = None, waive_fee: int = 0):
 	"""Cancel a booking, applying the property's cancellation policy:
@@ -1303,6 +1342,7 @@ def cancel_reservation(reservation: str, reason: str = "Guest request",
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def cancellation_letter(reservation: str):
 	"""Everything the printable cancellation confirmation needs."""
 	res = frappe.get_doc("Reservation", reservation)
@@ -1337,6 +1377,7 @@ def cancellation_letter(reservation: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def check_out(reservation: str):
 	doc = frappe.get_doc("Reservation", reservation)
 	doc.status = "Checked Out"
@@ -1346,6 +1387,7 @@ def check_out(reservation: str):
 
 
 @frappe.whitelist()
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
 def set_housekeeping_status(room: str, status: str):
 	allowed = {"Clean", "Dirty", "Inspected", "Out of Order"}
 	if status not in allowed:
@@ -1355,6 +1397,7 @@ def set_housekeeping_status(room: str, status: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def availability_calendar(property: str, start_date: str | None = None, days: int = 14):
 	"""Per room-type, per date: rooms available and the 2-adult rate.
 	Powers the calendar view and, later, the agent's availability tool."""
@@ -1414,6 +1457,7 @@ def availability_calendar(property: str, start_date: str | None = None, days: in
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 	"""Rooms × dates grid with reservation bars — the front desk's home."""
 	from frappe.utils import getdate
@@ -1452,6 +1496,7 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def move_reservation(reservation: str, new_room: str):
 	"""Room move — mid-stay or before arrival. Overlap guard re-runs."""
 	doc = frappe.get_doc("Reservation", reservation)
@@ -1472,6 +1517,7 @@ def move_reservation(reservation: str, new_room: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def amend_stay(reservation: str, check_in_date: str, check_out_date: str):
 	"""Extend / shorten a stay. Re-prices when auto_price is on; the
 	overlap guard validates the new window."""
@@ -1491,6 +1537,7 @@ def amend_stay(reservation: str, check_in_date: str, check_out_date: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def booking_options(property: str):
 	"""Everything the booking form needs to render its dropdowns."""
 	return {
@@ -1533,6 +1580,7 @@ def booking_options(property: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def get_quote(property: str, room_type: str, check_in_date: str,
               check_out_date: str, adults: int = 2, children: int = 0,
               meal_plan: str | None = None, rate_plan: str | None = None,
@@ -1560,6 +1608,7 @@ def _find_or_create_guest(guest_name: str, phone: str | None):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def create_booking(property: str, room_type: str, check_in_date: str,
                    check_out_date: str, guest_name: str,
                    phone: str | None = None, adults: int = 2,
@@ -1669,6 +1718,7 @@ def create_booking(property: str, room_type: str, check_in_date: str,
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def create_group_booking(property: str, group_name: str, check_in_date: str,
                          check_out_date: str, rooms: str | list,
                          guest_name: str, phone: str | None = None,
@@ -1719,6 +1769,7 @@ def create_group_booking(property: str, group_name: str, check_in_date: str,
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
 def available_rooms(property: str, room_type: str, check_in_date: str, check_out_date: str):
 	"""Rooms of a type with no overlapping live reservation — the same
 	logic the double-booking guard enforces, exposed as a query."""

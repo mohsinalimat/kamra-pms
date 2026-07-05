@@ -10,6 +10,7 @@ Agent Action Log. If the model is wrong, the tools refuse.
 import json
 
 import frappe
+from kamra.authz import require_roles
 import requests
 from frappe.utils import nowdate
 
@@ -203,6 +204,7 @@ def _run_tool(name: str, args: dict, property: str):
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Finance", "Revenue Manager")
 def ask(property: str, messages):
 	"""One copilot turn: history in, answer out. The model may call
 	governed tools along the way; every call is returned so the UI can

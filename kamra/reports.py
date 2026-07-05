@@ -6,6 +6,7 @@ cash drawer reconcile to.
 """
 
 import frappe
+from kamra.authz import require_roles
 from frappe.utils import add_days, getdate, nowdate
 
 
@@ -43,6 +44,7 @@ def _day_stats(property: str, date: str, total_rooms: int) -> dict:
 
 
 @frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
 def manager_flash(property: str, date: str | None = None):
 	"""The daily flash: yesterday's performance, month to date, today's
 	movement, collections by mode, and the 7-day outlook."""
