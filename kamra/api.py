@@ -882,9 +882,16 @@ def folio_invoice(folio: str):
 		"bill_to": bill_to,
 		"property": {
 			"name": prop.property_name, "legal_name": prop.legal_name,
+			"logo_url": prop.get("logo_url"),
+			"address_line": prop.address_line, "city": prop.city,
+			"state": prop.state, "pincode": prop.pincode,
 			"address": ", ".join(filter(None, [prop.address_line, prop.city,
 			                                   prop.state, prop.pincode])),
 			"gstin": prop.gstin, "phone": prop.phone, "email": prop.email,
+			# SAC 996311 = hotel/guest-house accommodation; place of supply for
+			# accommodation is where the hotel is (intra-state → CGST + SGST).
+			"sac": "996311",
+			"place_of_supply": prop.state,
 		},
 		"stay": {
 			"reservation": res.name,
@@ -1695,6 +1702,43 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 		"start": str(start), "days": days,
 		"dates": [str(add_days(start, i)) for i in range(days)],
 		"rooms": rooms,
+	}
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Revenue Manager", "Kamra Agent")
+def venue_calendar(property: str, start_date: str | None = None, days: int = 14):
+	"""Venues × dates with their bookings — the banquet/function diary. Shows
+	each venue's schedule so you can see availability and spot conflicts."""
+	from frappe.utils import getdate
+
+	start = getdate(start_date or nowdate())
+	days = min(int(days), 31)
+	end = add_days(start, days)
+	venues = frappe.get_all(
+		"Venue", filters={"property": property, "disabled": 0},
+		fields=["name", "venue_name", "capacity", "base_price"],
+		order_by="venue_name asc")
+	bookings = frappe.get_all(
+		"Venue Booking",
+		filters={"property": property,
+		         "event_date": ("between", [str(start), str(add_days(end, -1))])},
+		fields=["name", "venue", "event_type", "status", "event_date",
+		        "start_time", "end_time", "customer_name", "attendees",
+		        "quoted_amount", "advance_received"],
+		order_by="event_date asc, start_time asc")
+	by_venue = {}
+	for b in bookings:
+		b["start_time"] = str(b.start_time or "")[:5]
+		b["end_time"] = str(b.end_time or "")[:5]
+		b["event_date"] = str(b.event_date)
+		by_venue.setdefault(b.venue, []).append(b)
+	for v in venues:
+		v["bookings"] = by_venue.get(v.name, [])
+	return {
+		"start": str(start), "days": days,
+		"dates": [str(add_days(start, i)) for i in range(days)],
+		"venues": venues,
 	}
 
 

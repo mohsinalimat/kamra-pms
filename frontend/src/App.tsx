@@ -26,6 +26,7 @@ import CancellationLetter from "./screens/CancellationLetter"
 import Setup from "./screens/Setup"
 import Settings from "./screens/Settings"
 import Developers from "./screens/Developers"
+import VenueCalendar from "./screens/VenueCalendar"
 import Reports from "./screens/Reports"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
@@ -213,6 +214,7 @@ export default function App() {
             path="venues"
             element={<ResourceScreen config={venuesConfig} />}
           />
+          <Route path="venue-calendar" element={<VenueCalendar />} />
           <Route
             path="lost-found"
             element={<ResourceScreen config={lostFoundConfig} />}

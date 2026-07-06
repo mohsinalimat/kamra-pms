@@ -121,6 +121,7 @@ const NAV: NavGroup[] = [
     roles: ["Front Desk", "Revenue Manager", "Hotel Admin", "System Manager", "Administrator"],
     items: [
       { to: "/events", label: "Event Bookings", icon: PartyPopper },
+      { to: "/venue-calendar", label: "Venue Calendar", icon: CalendarDays },
       { to: "/venues", label: "Venues", icon: Landmark },
     ],
   },

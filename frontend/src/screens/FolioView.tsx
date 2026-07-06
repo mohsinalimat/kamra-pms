@@ -45,10 +45,15 @@ interface InvoiceData {
   }
   property: {
     name: string
+    legal_name: string | null
+    logo_url: string | null
     address: string
+    state: string | null
     gstin: string | null
     phone: string | null
     email: string | null
+    sac: string | null
+    place_of_supply: string | null
   }
   stay: {
     reservation: string
@@ -284,14 +289,42 @@ export default function FolioView() {
       {/* printable document */}
       <Card className="print:border-0 print:shadow-none">
         <CardContent className="py-6">
+          {folio.invoice_number && (
+            <p className="mb-3 text-center text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+              Tax Invoice
+            </p>
+          )}
           <div className="mb-6 flex flex-wrap items-start justify-between gap-4 border-b border-zinc-200 pb-5">
-            <div>
-              <h1 className="text-xl font-semibold">{property.name}</h1>
-              <p className="text-sm text-zinc-500">{property.address}</p>
-              <p className="text-sm text-zinc-500">
-                {property.gstin && <>GSTIN: {property.gstin} · </>}
-                {property.phone}
-              </p>
+            <div className="flex items-start gap-3">
+              {property.logo_url && (
+                <img
+                  src={property.logo_url}
+                  alt=""
+                  className="h-12 w-12 shrink-0 rounded object-contain"
+                  onError={(e) => {
+                    ;(e.target as HTMLImageElement).style.display = "none"
+                  }}
+                />
+              )}
+              <div>
+                <h1 className="text-xl font-semibold">
+                  {property.legal_name || property.name}
+                </h1>
+                {property.legal_name &&
+                  property.legal_name !== property.name && (
+                    <p className="text-sm text-zinc-500">{property.name}</p>
+                  )}
+                <p className="text-sm text-zinc-500">{property.address}</p>
+                <p className="text-sm text-zinc-500">
+                  {property.gstin && (
+                    <>
+                      GSTIN: <span className="font-medium">{property.gstin}</span>{" "}
+                      ·{" "}
+                    </>
+                  )}
+                  {property.phone}
+                </p>
+              </div>
             </div>
             <div className="text-right">
               <p className="text-lg font-semibold">
@@ -300,6 +333,13 @@ export default function FolioView() {
               <p className="text-sm text-zinc-500">
                 {folio.invoice_number ? "Tax Invoice" : "Folio (unsettled)"}
               </p>
+              {folio.invoice_number && property.place_of_supply && (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Place of supply: {property.place_of_supply}
+                  <br />
+                  SAC: {property.sac}
+                </p>
+              )}
               <Badge tone={open ? "amber" : "green"}>{folio.status}</Badge>
             </div>
           </div>
@@ -586,6 +626,23 @@ export default function FolioView() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {folio.invoice_number && (
+            <div className="mt-8 flex items-end justify-between border-t border-zinc-200 pt-4 text-xs text-zinc-500">
+              <p className="max-w-md">
+                This is a computer-generated tax invoice under the GST Act.
+                {property.gstin
+                  ? " Amounts are inclusive of GST at the rates shown."
+                  : ""}
+              </p>
+              <div className="text-center">
+                <div className="mb-1 h-8 w-40 border-b border-zinc-300" />
+                For {property.legal_name || property.name}
+                <br />
+                Authorised signatory
+              </div>
             </div>
           )}
         </CardContent>

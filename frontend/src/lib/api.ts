@@ -289,6 +289,38 @@ export const promoteWaitlist = (reservation: string) =>
     { reservation },
   )
 
+export interface VenueBookingCell {
+  name: string
+  venue: string
+  event_type: string
+  status: string
+  event_date: string
+  start_time: string
+  end_time: string
+  customer_name: string
+  attendees: number
+  quoted_amount: number
+  advance_received: number
+}
+export interface VenueCalendarData {
+  start: string
+  days: number
+  dates: string[]
+  venues: {
+    name: string
+    venue_name: string
+    capacity: number
+    base_price: number
+    bookings: VenueBookingCell[]
+  }[]
+}
+export const venueCalendar = (days = 14, startDate?: string) =>
+  call<VenueCalendarData>("kamra.api.venue_calendar", {
+    property: getCurrentProperty(),
+    days,
+    start_date: startDate ?? null,
+  })
+
 export const checkIn = (reservation: string) =>
   call("kamra.api.check_in", { reservation })
 
