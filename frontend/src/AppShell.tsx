@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react"
 import {
   BadgePercent,
   BedDouble,
+  Bot,
   Briefcase,
   Building2,
   CalendarDays,
@@ -33,6 +34,7 @@ import {
 import { NavLink, Outlet } from "react-router-dom"
 import { BookingDialog } from "./components/BookingDialog"
 import AssistantPanel from "./components/AssistantPanel"
+import { CommandPalette } from "./components/CommandPalette"
 import HelpPanel from "./components/HelpPanel"
 import { Button } from "./components/ui/button"
 import {
@@ -102,6 +104,15 @@ const NAV: NavGroup[] = [
       { to: "/tickets", label: "Tickets", icon: Ticket },
       { to: "/lost-found", label: "Lost & Found", icon: PackageSearch },
       { to: "/shifts", label: "Shifts", icon: Clock },
+    ],
+  },
+  {
+    // Agents live between Operations and Finance in daily importance: they
+    // touch both, and the Inbox is where the owner's tap-to-approve happens.
+    label: "Agents",
+    roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
+    items: [
+      { to: "/agents", label: "Team & Inbox", icon: Bot },
     ],
   },
   {
@@ -406,6 +417,7 @@ export default function AppShell() {
 
       <AssistantPanel key={`ai-${property}`} />
       <HelpPanel />
+      <CommandPalette />
 
       {booking && (
         <BookingDialog

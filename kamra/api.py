@@ -67,10 +67,17 @@ def generate_api_key():
 @frappe.whitelist()
 @require_roles("Revenue Manager", "Kamra Agent")
 def set_room_rate(property: str, room_type: str, start_date: str,
-                  end_date: str, rate: float, reason: str = ""):
+                  end_date: str, rate: float, reason: str = "",
+                  agent: str | None = None):
 	"""Set the nightly rate for a room type over a date range — bounded by
 	the owner's Rate Guardrails (PRD FR-30). This is the Revenue Agent's
-	write tool: it can never price outside the rails."""
+	write tool: it can never price outside the rails.
+
+	Autonomy: routes through the gate under the caller's agent identity
+	(default seed 'Ravi' has this as Approve — a Pending row is created
+	and the season only inserts when the human approves in the Inbox).
+	"""
+	from kamra.autonomy import GateExecute, GatePending, GateSuggest, finalize_after, guard
 	rate = float(rate)
 
 	guardrails = frappe.get_all(
@@ -94,6 +101,31 @@ def set_room_rate(property: str, room_type: str, start_date: str,
 				f"the ceiling of ₹{float(rail.ceiling_price):,.0f}."
 			)
 
+	summary = (f"Set {room_type.split('-')[-1]} rate → ₹{rate:,.0f} "
+	           f"for {start_date}→{end_date}")
+	decision = guard(
+		"set_room_rate",
+		endpoint="kamra.api.set_room_rate",
+		payload={"property": property, "room_type": room_type,
+		         "start_date": start_date, "end_date": end_date,
+		         "rate": rate, "reason": reason},
+		summary=summary,
+		agent_name=agent,
+		property=property,
+		minutes_saved=6,
+		rationale=reason or summary,
+		channel="API",
+	)
+	if isinstance(decision, GateSuggest):
+		return {"gate": "suggest", "summary": decision.summary,
+		        "log": decision.log_name,
+		        "would_do": {"room_type": room_type, "rate": rate,
+		                     "start_date": start_date, "end_date": end_date}}
+	if isinstance(decision, GatePending):
+		return {"gate": "pending", "pending": decision.pending_name,
+		        "log": decision.log_name, "summary": decision.summary}
+
+	# Executed — do the real work.
 	season = frappe.get_doc({
 		"doctype": "Season",
 		"property": property,
@@ -109,19 +141,11 @@ def set_room_rate(property: str, room_type: str, start_date: str,
 	# scoped — v0 seasons are property-wide, so callers should set rates per
 	# room type ranges deliberately. Tracked as a follow-up to scope seasons.
 	season.insert()
+	finalize_after(decision.log_name, {"season": season.name, "rate": rate,
+	                                    "range": [str(start_date), str(end_date)]})
 
-	from kamra.savings import log_action
-	log_action(
-		action_type="set_rate",
-		reference_doctype="Season",
-		reference_name=season.name,
-		property=property,
-		minutes_saved=6,
-		rationale=reason or f"Nightly rate → ₹{rate:,.0f} for {room_type} "
-		                    f"{start_date}→{end_date}",
-		channel="API",
-	)
 	return {
+		"gate": "executed", "log": decision.log_name,
 		"season": season.name, "rate": rate,
 		"guardrail_checked": rail.name if rail else None,
 	}
@@ -1504,12 +1528,19 @@ CANCEL_REASONS = ["Guest request", "Change of plans", "Duplicate booking",
 @frappe.whitelist()
 @require_roles("Front Desk", "Kamra Agent")
 def cancel_reservation(reservation: str, reason: str = "Guest request",
-                       note: str | None = None, waive_fee: int = 0):
+                       note: str | None = None, waive_fee: int = 0,
+                       agent: str | None = None):
 	"""Cancel a booking, applying the property's cancellation policy:
 	free outside the window, else the configured fee lands on the folio.
 	Issues a cancellation number the guest can hold on to. Pass
-	waive_fee=1 to cancel graciously (logged)."""
+	waive_fee=1 to cancel graciously (logged).
+
+	Autonomy: routes through the gate. Front Desk Copilot's default seed
+	autonomy is Approve — a Pending row lands in the Inbox with a preview
+	of the fee/refund, and the cancellation only fires on Approve.
+	"""
 	from frappe.model.naming import make_autoname
+	from kamra.autonomy import GateExecute, GatePending, GateSuggest, finalize_after, guard
 
 	res = frappe.get_doc("Reservation", reservation)
 	if res.status != "Confirmed":
@@ -1519,6 +1550,36 @@ def cancel_reservation(reservation: str, reason: str = "Guest request",
 		reason = "Other"
 	terms = _cancellation_terms(res)
 
+	summary = (f"Cancel {res.name} · {reason}"
+	           + (" · fee waived" if int(waive_fee or 0) else ""))
+	before = {
+		"name": res.name, "status": res.status,
+		"check_in_date": str(res.check_in_date),
+		"amount_after_tax": float(res.amount_after_tax or 0),
+	}
+	decision = guard(
+		"cancel_reservation",
+		endpoint="kamra.api.cancel_reservation",
+		payload={"reservation": reservation, "reason": reason,
+		         "note": note, "waive_fee": int(waive_fee or 0)},
+		summary=summary,
+		agent_name=agent,
+		reference_doctype="Reservation",
+		reference_name=res.name,
+		property=res.property,
+		minutes_saved=8,
+		rationale=summary,
+		before_snapshot=before,
+	)
+	if isinstance(decision, GateSuggest):
+		return {"gate": "suggest", "summary": decision.summary,
+		        "log": decision.log_name, "terms": terms}
+	if isinstance(decision, GatePending):
+		return {"gate": "pending", "pending": decision.pending_name,
+		        "log": decision.log_name, "summary": decision.summary,
+		        "terms": terms}
+
+	# Executed — actually cancel.
 	fee = 0.0
 	if terms["inside_window"] and not int(waive_fee or 0) \
 			and terms["fee_basis"] != "None":
@@ -1539,14 +1600,14 @@ def cancel_reservation(reservation: str, reason: str = "Guest request",
 	finally:
 		frappe.flags.kamra_cancelling = False
 
-	from kamra.savings import log_action
-	log_action("cancel_reservation", "Reservation", res.name, res.property,
-	           rationale=f"{res.cancellation_number} · {reason} · "
-	                     f"{terms['days_before_arrival']}d before arrival — "
-	                     + (f"fee ₹{fee:,.0f}" if fee else
-	                        ("fee waived" if int(waive_fee or 0)
-	                         else "no fee (outside window)")))
-	return {"reservation": res.name,
+	finalize_after(decision.log_name, {
+		"name": res.name, "status": res.status,
+		"cancellation_number": res.cancellation_number,
+		"cancellation_fee": float(fee or 0), "waived": bool(int(waive_fee or 0)),
+	})
+
+	return {"gate": "executed", "log": decision.log_name,
+	        "reservation": res.name,
 	        "cancellation_number": res.cancellation_number,
 	        "fee": fee, "waived": bool(int(waive_fee or 0))}
 

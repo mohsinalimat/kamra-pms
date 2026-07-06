@@ -31,6 +31,11 @@ scheduler_events = {
 		# 03:00 site time, daily
 		"0 3 * * *": ["kamra.folio.nightly_audit_all_properties"],
 	},
+	"hourly": [
+		# Expire Pending Agent Actions past their TTL so they don't linger in the
+		# Inbox forever (default TTL is 72h; set on Pending Agent Action.before_insert).
+		"kamra.autonomy.expire_stale_pending",
+	],
 }
 
 # Apps
