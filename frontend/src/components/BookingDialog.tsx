@@ -292,14 +292,19 @@ export function BookingDialog(props: {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50"
       role="dialog"
       aria-modal="true"
       aria-label="New booking"
       onKeyDown={(e) => e.key === "Escape" && props.onClose()}
     >
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-zinc-100 px-7 py-5">
+      <div
+        className="absolute inset-0 bg-black/40 animate-fade-in"
+        onClick={props.onClose}
+        aria-hidden
+      />
+      <div className="absolute inset-y-0 right-0 w-full max-w-[64rem] overflow-y-auto bg-white shadow-2xl animate-sheet-in sm:w-[66vw]">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-100 bg-white px-7 py-5">
           <div>
             <h2 className="text-xl font-semibold">New booking</h2>
             <p className="mt-0.5 text-sm text-zinc-400">
