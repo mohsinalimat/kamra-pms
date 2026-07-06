@@ -321,6 +321,46 @@ export const venueCalendar = (days = 14, startDate?: string) =>
     start_date: startDate ?? null,
   })
 
+// --- Assistant conversations (full-page module) ---
+export interface ChatMsg {
+  role: "user" | "assistant"
+  content: string
+  actions?: { tool: string; ok: boolean }[]
+}
+export interface ConversationSummary {
+  name: string
+  title: string
+  modified: string
+}
+export const listConversations = () =>
+  call<ConversationSummary[]>("kamra.assistant.list_conversations", {
+    property: getCurrentProperty(),
+  })
+export const getConversation = (name: string) =>
+  call<{ name: string; title: string; messages: ChatMsg[] }>(
+    "kamra.assistant.get_conversation",
+    { name },
+  )
+export const createConversation = (title?: string) =>
+  call<{ name: string; title: string }>("kamra.assistant.create_conversation", {
+    property: getCurrentProperty(),
+    title: title ?? "New chat",
+  })
+export const saveConversation = (
+  name: string,
+  messages: ChatMsg[],
+  title?: string,
+) =>
+  call<{ ok: boolean }>("kamra.assistant.save_conversation", {
+    name,
+    messages,
+    title: title ?? null,
+  })
+export const deleteConversation = (name: string) =>
+  call<{ ok: boolean }>("kamra.assistant.delete_conversation", { name })
+export const renameConversation = (name: string, title: string) =>
+  call<{ ok: boolean }>("kamra.assistant.rename_conversation", { name, title })
+
 export const checkIn = (reservation: string) =>
   call("kamra.api.check_in", { reservation })
 

@@ -27,6 +27,7 @@ import Setup from "./screens/Setup"
 import Settings from "./screens/Settings"
 import Developers from "./screens/Developers"
 import VenueCalendar from "./screens/VenueCalendar"
+import Assistant from "./screens/Assistant"
 import Reports from "./screens/Reports"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
@@ -158,6 +159,7 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route element={<AppShell />}>
           <Route index element={<Today />} />
+          <Route path="assistant" element={<Assistant />} />
           <Route path="calendar" element={<CalendarScreen />} />
           <Route path="tape" element={<TapeChart />} />
           <Route

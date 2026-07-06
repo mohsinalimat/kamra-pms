@@ -21,6 +21,7 @@ import {
   Code2,
   ExternalLink,
   UserCog,
+  Sparkles,
   Sun,
   ShieldCheck,
   Tags,
@@ -80,6 +81,7 @@ const NAV: NavGroup[] = [
     roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
     items: [
       { to: "/", label: "Today", icon: Home },
+      { to: "/assistant", label: "Copilot", icon: Sparkles },
       { to: "/tape", label: "Tape Chart", icon: LayoutGrid },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       { to: "/reservations", label: "Reservations", icon: ClipboardList },

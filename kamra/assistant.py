@@ -497,3 +497,89 @@ def help_ask(property: str, messages):
 	return Response(gen(), mimetype="text/event-stream", headers={
 		"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
 	})
+
+
+# ---------------------------------------------------------------------------
+# Persistent conversations for the full-page assistant module. Each row is one
+# chat, owned by the user who created it and scoped to a property. Messages are
+# the display history [{role, content, actions?}] — the agent re-runs its tools
+# each turn, so it only needs the text history for context.
+# ---------------------------------------------------------------------------
+
+CONVO_ROLES = ("Front Desk", "Finance", "Revenue Manager", "Hotel Admin",
+               "Kamra Agent")
+
+
+def _own_convo(name):
+	owner = frappe.db.get_value("Copilot Conversation", name, "owner")
+	if owner is None:
+		frappe.throw("Conversation not found.")
+	if owner != frappe.session.user and "System Manager" not in frappe.get_roles():
+		frappe.throw("That conversation isn't yours.", frappe.PermissionError)
+
+
+@frappe.whitelist()
+@require_roles(*CONVO_ROLES)
+def list_conversations(property: str):
+	"""The signed-in user's chats for this property, most recent first."""
+	return frappe.get_all(
+		"Copilot Conversation",
+		filters={"owner": frappe.session.user, "property": property},
+		fields=["name", "title", "modified"],
+		order_by="modified desc", limit=100)
+
+
+@frappe.whitelist()
+@require_roles(*CONVO_ROLES)
+def get_conversation(name: str):
+	_own_convo(name)
+	doc = frappe.get_doc("Copilot Conversation", name)
+	return {
+		"name": doc.name, "title": doc.title,
+		"messages": frappe.parse_json(doc.messages) if doc.messages else [],
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles(*CONVO_ROLES)
+def create_conversation(property: str, title: str = "New chat"):
+	doc = frappe.new_doc("Copilot Conversation")
+	doc.property = property
+	doc.title = title or "New chat"
+	doc.messages = "[]"
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"name": doc.name, "title": doc.title}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles(*CONVO_ROLES)
+def save_conversation(name: str, messages, title: str | None = None):
+	_own_convo(name)
+	if isinstance(messages, str):
+		messages = frappe.parse_json(messages)
+	updates = {"messages": frappe.as_json(messages)}
+	if title:
+		updates["title"] = title[:140]
+	frappe.db.set_value("Copilot Conversation", name, updates)
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles(*CONVO_ROLES)
+def rename_conversation(name: str, title: str):
+	_own_convo(name)
+	frappe.db.set_value("Copilot Conversation", name, "title",
+	                    (title or "Untitled")[:140])
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles(*CONVO_ROLES)
+def delete_conversation(name: str):
+	_own_convo(name)
+	frappe.delete_doc("Copilot Conversation", name, ignore_permissions=True)
+	frappe.db.commit()
+	return {"ok": True}
