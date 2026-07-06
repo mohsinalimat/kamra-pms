@@ -378,7 +378,7 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
         const useDetail = editing !== "new" && !!config.detailPanel
         return (
         <Sheet
-          wide={useDetail}
+          wide
           title={
             editing === "new"
               ? `New ${config.title.replace(/s$/, "")}`
@@ -422,20 +422,30 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
             />
           ) : (
             <div className="space-y-4">
-              {config.form.map((spec) => (
-                <label key={spec.field} className="block">
-                  <span className="mb-1.5 block text-sm font-medium text-zinc-600">
-                    {spec.label}
-                    {spec.required && <span className="text-rose-500"> *</span>}
-                  </span>
-                  <FieldInput
-                    spec={spec}
-                    value={draft[spec.field]}
-                    onChange={(v) => setDraft((d) => ({ ...d, [spec.field]: v }))}
-                    linkOptions={linkOptions}
-                  />
-                </label>
-              ))}
+              <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                {config.form.map((spec) => (
+                  <label
+                    key={spec.field}
+                    className={
+                      "block" +
+                      (spec.type === "check" ? " sm:col-span-2" : "")
+                    }
+                  >
+                    <span className="mb-1.5 block text-sm font-medium text-zinc-600">
+                      {spec.label}
+                      {spec.required && <span className="text-rose-500"> *</span>}
+                    </span>
+                    <FieldInput
+                      spec={spec}
+                      value={draft[spec.field]}
+                      onChange={(v) =>
+                        setDraft((d) => ({ ...d, [spec.field]: v }))
+                      }
+                      linkOptions={linkOptions}
+                    />
+                  </label>
+                ))}
+              </div>
               {editing !== "new" && config.extra && (
                 <config.extra row={editing} reload={load} />
               )}
