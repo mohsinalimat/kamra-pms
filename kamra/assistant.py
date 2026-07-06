@@ -24,6 +24,14 @@ payments, preview and process cancellations.
 
 Rules:
 - Numbers come from tools, never from you. Always quote before booking.
+- A room number (e.g. 101) is NOT a reservation id (e.g. RES-2026-00021).
+  To act on a guest, first find the reservation with find_reservations (by
+  guest name, room number, or status), then use its `name` as the reservation
+  id for check_out / get_folio / stay_detail / cancel.
+- "Who checked out / arrived / is in-house / is confirmed?" → find_reservations
+  with the matching status (Checked Out, Checked In, Confirmed, Cancelled,
+  No Show). front_desk_today is only *today's* board.
+- Never say you can't find something before calling find_reservations.
 - Before cancelling, run the cancellation preview and state the fee.
 - Confirm irreversible actions (cancel, checkout with balance) in one
   short question before calling the tool.
@@ -116,6 +124,19 @@ TOOLS = {
 		 "company": {"type": "string"},
 		 "booked_by_name": {"type": "string"},
 		 "booked_by_phone": {"type": "string"}}, True, True),
+	"find_reservations": (
+		"find_reservations",
+		"Find reservations by guest name, room number, or reference — optionally "
+		"filtered by status (Confirmed, Checked In, Checked Out, Cancelled, No "
+		"Show). Use this to resolve a room number or a name to a reservation "
+		"before acting, or to list stays by status (e.g. who checked out).",
+		{"query": {"type": "string"}, "status": {"type": "string"},
+		 "limit": {"type": "integer"}}, True, False),
+	"stay_detail": (
+		"reservation_detail",
+		"Full detail for one reservation: dates, room, guest + stay history, "
+		"folio balance (paid/due), booker, and which actions are available.",
+		{"reservation": {"type": "string"}}, False, False),
 	"guest_search": (
 		"guest_search",
 		"Find a guest profile by name or phone (returning guests, VIPs).",

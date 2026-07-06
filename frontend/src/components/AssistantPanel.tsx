@@ -23,6 +23,8 @@ const SUGGESTIONS = [
 
 const toolLabel: Record<string, string> = {
   front_desk_today: "Checked today's board",
+  find_reservations: "Looked up reservations",
+  stay_detail: "Checked the stay",
   availability: "Checked availability",
   quote: "Priced the stay",
   booking_options: "Looked up options",

@@ -1292,6 +1292,38 @@ def front_desk_snapshot(property: str | None = None, date: str | None = None):
 
 @frappe.whitelist()
 @require_roles("Front Desk", "Kamra Agent", "Finance", "Revenue Manager")
+def find_reservations(property: str, query: str | None = None,
+                      status: str | None = None, limit: int = 20):
+	"""Search reservations by guest name, room number, or reference — optionally
+	filtered by status. The way to resolve a room number or a name to an actual
+	reservation before acting on it."""
+	filters = {"property": property}
+	if status:
+		filters["status"] = status
+	or_filters = None
+	if query and query.strip():
+		q = f"%{query.strip()}%"
+		or_filters = [
+			["name", "like", q],
+			["guest_name", "like", q],
+			["room", "like", q],
+		]
+	return frappe.get_all(
+		"Reservation",
+		filters=filters,
+		or_filters=or_filters,
+		fields=[
+			"name", "guest_name", "room", "room_type", "status",
+			"check_in_date", "check_out_date", "nights", "adults", "children",
+			"amount_after_tax", "advance_paid",
+		],
+		order_by="check_in_date desc",
+		limit=int(limit or 20),
+	)
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent", "Finance", "Revenue Manager")
 def reservation_detail(reservation: str):
 	"""Everything about one booking in a single call — stay, money, guest,
 	booker and the actions currently available. Powers the reservation drawer."""
