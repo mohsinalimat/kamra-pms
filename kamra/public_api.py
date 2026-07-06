@@ -5,6 +5,8 @@ Write: one endpoint, create a Website booking. Everything else stays
 behind auth. Money still comes only from the pricing engine.
 """
 
+import re
+
 import frappe
 from frappe.rate_limiter import rate_limit
 from frappe.utils import date_diff
@@ -44,7 +46,7 @@ def showcase(property: str):
 			"children_capacity": rt.children_capacity,
 			"bed_type": rt.bed_type,
 			"room_view": rt.room_view,
-			"amenities": [a.strip() for a in (rt.amenities or "").split(",") if a.strip()],
+			"amenities": [a.strip() for a in re.split(r"[,\n]", rt.amenities or "") if a.strip()],
 			"media": [
 				{"media_type": m.media_type, "url": m.url, "caption": m.caption}
 				for m in (rt.get("media") or [])
@@ -78,7 +80,7 @@ def showcase(property: str):
 			"phone": prop.phone, "email": prop.email,
 			"google_reviews_url": prop.get("google_reviews_url"),
 			"tripadvisor_url": prop.get("tripadvisor_url"),
-			"amenities": [a.strip() for a in (prop.get("property_amenities") or "").split(",") if a.strip()],
+			"amenities": [a.strip() for a in re.split(r"[,\n]", prop.get("property_amenities") or "") if a.strip()],
 			"checkin_time": str(prop.checkin_time or ""),
 			"checkout_time": str(prop.checkout_time or ""),
 		},

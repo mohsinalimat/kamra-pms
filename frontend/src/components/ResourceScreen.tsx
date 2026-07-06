@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ComponentType } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Search, Trash2 } from "lucide-react"
 import { Sheet } from "./ui/sheet"
 import { getCurrentProperty } from "../lib/api"
 import {
@@ -33,6 +33,12 @@ export interface ScreenConfig {
   allowCreate?: boolean
   allowDelete?: boolean
   orderBy?: string
+  /** Fields searched (LIKE) by the search box. Adds a search input when set. */
+  searchFields?: string[]
+  /** Dropdown filters shown in the toolbar (e.g. status). */
+  filters?: { field: string; label: string; options: string[] }[]
+  /** Rows per page (adds pagination when set). */
+  pageSize?: number
   /** Custom section rendered in the drawer below the form (existing rows only). */
   extra?: ComponentType<{ row: Row; reload: () => void }>
   /** Replace the generic edit form with a bespoke detail panel (existing rows).
@@ -140,18 +146,43 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [linkOptions, setLinkOptions] = useState<Record<string, string[]>>({})
+  const [search, setSearch] = useState("")
+  const [debounced, setDebounced] = useState("")
+  const [filterVals, setFilterVals] = useState<Record<string, string>>({})
+  const [page, setPage] = useState(0)
+
+  const pageSize = config.pageSize ?? 0
 
   const fields = Array.from(
     new Set(["name", ...config.columns.map((c) => c.field)]),
   )
 
+  // debounce the search box
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // any search/filter change resets to the first page
+  useEffect(() => setPage(0), [debounced, filterVals])
+
   const load = useCallback(() => {
+    const filters: (string | number)[][] = []
+    if (config.propertyScoped)
+      filters.push(["property", "=", getCurrentProperty()])
+    for (const [field, val] of Object.entries(filterVals))
+      if (val) filters.push([field, "=", val])
+    const orFilters =
+      debounced && config.searchFields?.length
+        ? config.searchFields.map((f) => [f, "like", `%${debounced}%`])
+        : undefined
     listResource(config.doctype, {
       fields,
-      filters: config.propertyScoped
-        ? [["property", "=", getCurrentProperty()]]
-        : undefined,
+      filters: filters.length ? filters : undefined,
+      orFilters,
       orderBy: config.orderBy,
+      limit: pageSize || 100,
+      start: pageSize ? page * pageSize : 0,
     })
       .then((r) => {
         setRows(r)
@@ -159,7 +190,7 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
       })
       .catch((e) => setError(serverError(e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.doctype])
+  }, [config.doctype, debounced, filterVals, page])
 
   useEffect(load, [load])
 
@@ -246,6 +277,38 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
             {error}
           </div>
         )}
+        {(config.searchFields?.length || config.filters?.length) && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {config.searchFields?.length ? (
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-2 size-4 text-zinc-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search…"
+                  className="w-56 rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+                />
+              </div>
+            ) : null}
+            {config.filters?.map((f) => (
+              <select
+                key={f.field}
+                value={filterVals[f.field] ?? ""}
+                onChange={(e) =>
+                  setFilterVals((v) => ({ ...v, [f.field]: e.target.value }))
+                }
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+              >
+                <option value="">{f.label}: all</option>
+                {f.options.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            ))}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -288,6 +351,27 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
             </tbody>
           </table>
         </div>
+        {pageSize > 0 && (page > 0 || rows.length >= pageSize) && (
+          <div className="mt-3 flex items-center justify-between text-sm text-zinc-500">
+            <span>Page {page + 1}</span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                disabled={rows.length < pageSize}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
 
       {editing && (() => {

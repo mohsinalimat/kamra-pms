@@ -1,5 +1,6 @@
 import type { ScreenConfig } from "../components/ResourceScreen"
 import BillingRulesEditor from "../components/BillingRulesEditor"
+import RoomTypeMedia from "../components/RoomTypeMedia"
 import ReservationDetail from "./ReservationDetail"
 
 export const roomsConfig: ScreenConfig = {
@@ -52,6 +53,7 @@ export const roomTypesConfig: ScreenConfig = {
     { field: "bed_type", label: "Bed type", type: "select", options: ["King", "Queen", "Twin", "Double", "Single"] },
     { field: "disabled", label: "Disabled", type: "check" },
   ],
+  extra: RoomTypeMedia,
 }
 
 export const ratePlansConfig: ScreenConfig = {
@@ -371,6 +373,22 @@ export const reservationsConfig: ScreenConfig = {
   propertyScoped: true,
   allowCreate: false,
   orderBy: "check_in_date desc",
+  searchFields: ["name", "guest_name", "room"],
+  filters: [
+    {
+      field: "status",
+      label: "Status",
+      options: [
+        "Waitlist",
+        "Confirmed",
+        "Checked In",
+        "Checked Out",
+        "Cancelled",
+        "No Show",
+      ],
+    },
+  ],
+  pageSize: 25,
   columns: [
     { field: "name", label: "Ref" },
     { field: "guest_name", label: "Guest" },
