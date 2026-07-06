@@ -33,7 +33,6 @@ import {
 } from "lucide-react"
 import { NavLink, Outlet } from "react-router-dom"
 import { BookingDialog } from "./components/BookingDialog"
-import AssistantPanel from "./components/AssistantPanel"
 import { CommandPalette } from "./components/CommandPalette"
 import HelpPanel from "./components/HelpPanel"
 import { Button } from "./components/ui/button"
@@ -415,7 +414,6 @@ export default function AppShell() {
         </main>
       </div>
 
-      <AssistantPanel key={`ai-${property}`} />
       <HelpPanel />
       <CommandPalette />
 

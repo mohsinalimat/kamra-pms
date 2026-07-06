@@ -872,6 +872,39 @@ def close_folio(folio: str):
 	return {"invoice_number": invoice_number}
 
 
+@frappe.whitelist(methods=["POST"])
+@require_roles("Finance", "Front Desk", "Kamra Agent")
+def post_allowance(folio: str, amount: float, reason: str,
+                   gst_rate: float = 0):
+	"""Write off part of a bill against a specific folio, with a reason."""
+	from kamra.folio import post_allowance as _allow
+	_allow(folio, float(amount), reason, float(gst_rate or 0))
+	from kamra.savings import log_action
+	log_action("allowance", "Folio", folio,
+	           rationale=f"Allowance ₹{abs(float(amount)):,.2f}: {reason}")
+	return {"ok": True, "folio": folio}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Finance", "Front Desk", "Kamra Agent")
+def part_settle_folio(folio: str):
+	"""Interim invoice mid-stay: freeze the paid folio, open a fresh one."""
+	from kamra.folio import part_settle as _settle
+	return _settle(folio)
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Finance", "Front Desk", "Kamra Agent")
+def cancel_invoice(folio: str, reason: str):
+	"""Void an invoice into the register and reopen the folio for correction."""
+	from kamra.folio import cancel_invoice as _cancel
+	out = _cancel(folio, reason)
+	from kamra.savings import log_action
+	log_action("cancel_invoice", "Folio", folio,
+	           rationale=f"Invoice {out['cancelled']} cancelled: {reason}")
+	return out
+
+
 @frappe.whitelist()
 @require_roles("Finance", "Front Desk", "Kamra Agent")
 def folio_invoice(folio: str):

@@ -123,6 +123,9 @@ export default function FolioView() {
   const [splitVal, setSplitVal] = useState("50%")
   const [splitTarget, setSplitTarget] = useState("")
   const [payment, setPayment] = useState({ mode: "UPI", amount: "", reference: "" })
+  const [showCancel, setShowCancel] = useState(false)
+  const [cancelReason, setCancelReason] = useState("")
+  const [allowance, setAllowance] = useState({ amount: "", reason: "", gst_rate: "0" })
 
   const load = useCallback(() => {
     if (name)
@@ -298,6 +301,35 @@ export default function FolioView() {
             <Printer className="size-4" aria-hidden />
             Print {folio.invoice_number ? "invoice" : "folio"}
           </Button>
+          {open &&
+            folio.balance === 0 &&
+            folio.charges.length > 0 && (
+              <Button
+                variant="outline"
+                disabled={busy}
+                title="Interim invoice: freeze this paid folio and keep the stay running on a fresh one — for long stays settled every few days"
+                onClick={() =>
+                  act(async () => {
+                    const r = await call<{ new_folio: string }>(
+                      "kamra.api.part_settle_folio",
+                      { folio: folio.name },
+                    )
+                    navigate(`/billing/${encodeURIComponent(r.new_folio)}`)
+                  })
+                }
+              >
+                Settle &amp; continue stay
+              </Button>
+            )}
+          {!open && folio.invoice_number && (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setShowCancel((s) => !s)}
+            >
+              Cancel invoice
+            </Button>
+          )}
           {open && (
             <Button
               disabled={busy}
@@ -310,6 +342,37 @@ export default function FolioView() {
           )}
         </div>
       </div>
+
+      {showCancel && !open && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm print:hidden">
+          <span className="text-amber-800">
+            Cancel {folio.invoice_number}? The number goes on the cancelled
+            register and the folio reopens for correction.
+          </span>
+          <input
+            className="min-w-56 flex-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm"
+            placeholder="Reason (required — goes on the record)"
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+          />
+          <Button
+            variant="outline"
+            disabled={busy || !cancelReason.trim()}
+            onClick={() =>
+              act(async () => {
+                await call("kamra.api.cancel_invoice", {
+                  folio: folio.name,
+                  reason: cancelReason.trim(),
+                })
+                setShowCancel(false)
+                setCancelReason("")
+              })
+            }
+          >
+            Confirm cancel
+          </Button>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 print:hidden">
@@ -769,6 +832,63 @@ export default function FolioView() {
               >
                 Post
               </Button>
+              <div className="mt-1 w-full border-t border-zinc-100 pt-3">
+                <div className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-400">
+                  Pass an allowance
+                  <span className="ml-1.5 normal-case tracking-normal">
+                    — write off part of the bill, with a reason
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <input
+                    className={`${inputCls} w-24`}
+                    type="number"
+                    placeholder="₹"
+                    value={allowance.amount}
+                    onChange={(e) =>
+                      setAllowance({ ...allowance, amount: e.target.value })
+                    }
+                  />
+                  <select
+                    className={inputCls}
+                    value={allowance.gst_rate}
+                    onChange={(e) =>
+                      setAllowance({ ...allowance, gst_rate: e.target.value })
+                    }
+                  >
+                    {["0", "5", "12", "18", "28"].map((r) => (
+                      <option key={r} value={r}>
+                        GST {r}%
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className={`${inputCls} min-w-40 flex-1`}
+                    placeholder="Reason (required)"
+                    value={allowance.reason}
+                    onChange={(e) =>
+                      setAllowance({ ...allowance, reason: e.target.value })
+                    }
+                  />
+                  <Button
+                    variant="outline"
+                    disabled={busy || !allowance.amount || !allowance.reason.trim()}
+                    onClick={() =>
+                      act(async () => {
+                        await call("kamra.api.post_allowance", {
+                          folio: folio.name,
+                          amount: Number(allowance.amount),
+                          reason: allowance.reason.trim(),
+                          gst_rate: Number(allowance.gst_rate),
+                        })
+                        setAllowance({ amount: "", reason: "", gst_rate: "0" })
+                      })
+                    }
+                  >
+                    Allow
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

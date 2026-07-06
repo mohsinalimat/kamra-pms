@@ -115,13 +115,13 @@ export default function HelpPanel() {
       <button
         aria-label="Open help"
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-5 right-20 z-40 flex size-12 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 shadow-lg hover:text-brand-700 print:hidden"
+        className="fixed bottom-5 right-5 z-40 flex size-12 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 shadow-lg hover:text-brand-700 print:hidden"
       >
         {open ? <X className="size-5" /> : <HelpCircle className="size-5" />}
       </button>
 
       {open && (
-        <div className="fixed bottom-20 right-20 z-40 flex h-[520px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl print:hidden">
+        <div className="fixed bottom-20 right-5 z-40 flex h-[520px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl print:hidden">
           <div className="flex items-center gap-2 border-b border-zinc-100 px-4 py-3">
             <HelpCircle className="size-4 text-brand-600" />
             <span className="text-sm font-semibold">How-to help</span>

@@ -14,7 +14,13 @@ class Folio(Document):
 		"""Once the GST invoice number is assigned the bill is frozen:
 		no reopening, no renumbering, no touching charge lines — only
 		settling payments may still be recorded. Adjustments belong on a
-		new folio (credit note territory), not inside an issued invoice."""
+		new folio (credit note territory), not inside an issued invoice.
+
+		The one sanctioned way through: kamra.folio.cancel_invoice, which
+		first books the number into the Cancelled Invoice register (the
+		sequence never loses a bill) and sets this flag for its own save."""
+		if getattr(frappe.flags, "kamra_invoice_cancel", False):
+			return
 		if self.is_new():
 			return
 		old = self.get_doc_before_save()

@@ -500,6 +500,97 @@ def close_folio(folio_name: str) -> str:
 	return folio.invoice_number
 
 
+def post_allowance(folio_name: str, amount: float, reason: str,
+                   gst_rate: float = 0) -> str:
+	"""A negative adjustment against a specific folio — the hotel writes off
+	part of a charge (service recovery, dispute) WITHOUT touching the original
+	line, so the trail stays honest. GST reverses at the same rate as the
+	charge being adjusted."""
+	folio = frappe.get_doc("Folio", folio_name)
+	if folio.status == "Closed":
+		frappe.throw("This folio is settled — pass the allowance on the "
+		             "guest's open folio, or cancel the invoice first.")
+	amount = abs(float(amount))
+	if not amount:
+		frappe.throw("Allowance amount is required.")
+	if not (reason or "").strip():
+		frappe.throw("An allowance needs a reason — it goes on the record.")
+	folio.append("charges", {
+		"posting_date": frappe.utils.nowdate(),
+		"charge_type": "Allowance",
+		"description": reason.strip(),
+		"qty": 1,
+		"rate": -amount,
+		"amount": -amount,
+		"gst_rate": float(gst_rate or 0),
+	})
+	_recalculate(folio)
+	folio.save(ignore_permissions=True)
+	return folio.name
+
+
+def part_settle(folio_name: str) -> dict:
+	"""Interim invoice mid-stay: freeze the fully-paid folio with a real
+	invoice number and open a fresh one so the stay keeps running — the
+	long-stay pattern (guests settling every N days without checking out).
+	The room stays occupied; only the bill closes."""
+	folio = frappe.get_doc("Folio", folio_name)
+	if folio.status == "Closed":
+		frappe.throw("This folio is already settled.")
+	_recalculate(folio)
+	if round(folio.balance or 0, 2) != 0:
+		frappe.throw("Settle the balance first — an interim invoice needs "
+		             "the folio fully paid.")
+	if not folio.charges:
+		frappe.throw("Nothing to invoice on this folio.")
+	invoice = close_folio(folio.name)
+	fresh = frappe.get_doc({
+		"doctype": "Folio",
+		"property": folio.property,
+		"reservation": folio.reservation,
+		"guest": folio.guest,
+		"folio_type": folio.folio_type,
+		"status": "Open",
+		"opened_on": now_datetime(),
+		"group_booking": folio.get("group_booking"),
+	})
+	_recalculate(fresh)
+	fresh.insert(ignore_permissions=True)
+	return {"invoice_number": invoice, "closed_folio": folio.name,
+	        "new_folio": fresh.name}
+
+
+def cancel_invoice(folio_name: str, reason: str) -> dict:
+	"""Void a generated invoice the auditable way: the number goes to the
+	Cancelled Invoice register (finance never loses a bill in the sequence,
+	and the old bill stays printable), then the folio reopens so it can be
+	corrected and re-closed under a fresh number."""
+	folio = frappe.get_doc("Folio", folio_name)
+	if folio.status != "Closed" or not folio.invoice_number:
+		frappe.throw("Only a settled folio with an invoice can be cancelled.")
+	if not (reason or "").strip():
+		frappe.throw("A cancellation needs a reason — it goes on the record.")
+	frappe.get_doc({
+		"doctype": "Cancelled Invoice",
+		"property": folio.property,
+		"folio": folio.name,
+		"invoice_number": folio.invoice_number,
+		"grand_total": folio.grand_total,
+		"cancelled_on": now_datetime(),
+		"reason": reason.strip(),
+	}).insert(ignore_permissions=True)
+	old = folio.invoice_number
+	folio.invoice_number = None
+	folio.status = "Open"
+	folio.closed_on = None
+	frappe.flags.kamra_invoice_cancel = True
+	try:
+		folio.save(ignore_permissions=True)
+	finally:
+		frappe.flags.kamra_invoice_cancel = False
+	return {"cancelled": old, "folio": folio.name}
+
+
 def run_night_audit(property: str, business_date: str | None = None) -> dict:
 	"""Automated end-of-day: open missing folios, post the night's room
 	charges for every in-house guest, flag no-shows. Idempotent per date."""
