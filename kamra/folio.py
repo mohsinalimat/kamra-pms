@@ -307,8 +307,19 @@ def post_remaining_nights(reservation) -> int:
 
 def split_folio(reservation: str, folio_type: str = "Extra") -> str:
 	"""Open an additional folio for a stay (Extra or Company) so charges
-	can be routed/split — e.g. 70/30 corporate vs personal."""
+	can be routed/split — e.g. 70/30 corporate vs personal.
+
+	If an empty folio of this type already exists, reuse it rather than
+	piling up blank duplicates — you only ever need one unused split open."""
 	res = frappe.get_doc("Reservation", reservation)
+	for f in frappe.get_all(
+		"Folio",
+		filters={"reservation": reservation, "folio_type": folio_type,
+		         "status": "Open"},
+		fields=["name", "grand_total", "payments_total"],
+	):
+		if not f.grand_total and not f.payments_total:
+			return f.name
 	folio = frappe.get_doc({
 		"doctype": "Folio",
 		"property": res.property,

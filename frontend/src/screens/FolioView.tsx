@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from "react"
-import { ArrowLeft, Printer } from "lucide-react"
+import { ArrowLeft, Printer, X } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { call } from "../lib/api"
 import { serverError } from "../lib/resource"
@@ -92,7 +92,19 @@ interface SiblingFolio {
   folio_type: string
   status: string
   balance: number
+  grand_total: number
+  payments_total: number
 }
+
+/** A distinct label per folio — Extras get numbered when there's more than one. */
+function folioLabel(siblings: SiblingFolio[], s: SiblingFolio) {
+  if (s.folio_type !== "Extra") return s.folio_type
+  const extras = siblings.filter((x) => x.folio_type === "Extra")
+  if (extras.length <= 1) return "Extra"
+  return `Extra ${extras.findIndex((x) => x.name === s.name) + 1}`
+}
+const isEmptyFolio = (s: SiblingFolio) =>
+  !s.grand_total && !s.payments_total
 
 export default function FolioView() {
   const { name } = useParams()
@@ -141,6 +153,18 @@ export default function FolioView() {
     }
   }
 
+  function removeFolio(target: SiblingFolio) {
+    act(async () => {
+      await call("kamra.api.delete_folio", { folio: target.name })
+      if (target.name === name) {
+        const guest = siblings.find((s) => s.folio_type === "Guest")
+        navigate(
+          guest ? `/billing/${encodeURIComponent(guest.name)}` : "/billing",
+        )
+      }
+    })
+  }
+
   if (!data)
     return <p className="py-10 text-center text-sm text-zinc-400">Loading…</p>
 
@@ -159,20 +183,53 @@ export default function FolioView() {
         </Link>
         <div className="flex gap-2">
           {siblings.length > 1 && (
-            <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1 text-xs">
-              {siblings.map((s) => (
-                <Link
-                  key={s.name}
-                  to={`/billing/${encodeURIComponent(s.name)}`}
-                  className={
-                    s.name === folio.name
-                      ? "rounded-md bg-white px-2 py-1 font-medium shadow-sm"
-                      : "px-2 py-1 text-zinc-500 hover:text-zinc-800"
-                  }
-                >
-                  {s.folio_type}
-                </Link>
-              ))}
+            <div className="flex flex-wrap items-center gap-1 rounded-lg bg-zinc-100 p-1">
+              {siblings.map((s) => {
+                const active = s.name === folio.name
+                const empty = isEmptyFolio(s)
+                const canDelete =
+                  empty && s.folio_type !== "Guest" && s.folio_type !== "Group"
+                return (
+                  <div
+                    key={s.name}
+                    className={
+                      "group flex items-center rounded-md " +
+                      (active ? "bg-white shadow-sm" : "")
+                    }
+                  >
+                    <Link
+                      to={`/billing/${encodeURIComponent(s.name)}`}
+                      className={
+                        "flex items-center gap-1.5 px-2.5 py-1 text-xs " +
+                        (active
+                          ? "font-medium text-zinc-800"
+                          : "text-zinc-500 hover:text-zinc-800")
+                      }
+                    >
+                      {folioLabel(siblings, s)}
+                      <span
+                        className={
+                          "tabular-nums " +
+                          (s.balance > 0 ? "text-amber-600" : "text-zinc-400")
+                        }
+                      >
+                        ₹{inr(s.balance)}
+                      </span>
+                    </Link>
+                    {canDelete && (
+                      <button
+                        aria-label={`Delete empty ${folioLabel(siblings, s)} folio`}
+                        title="Delete this empty folio"
+                        disabled={busy}
+                        onClick={() => removeFolio(s)}
+                        className="pr-1.5 text-zinc-300 hover:text-rose-500"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
           {open && folio.balance > 0 && (
@@ -201,32 +258,6 @@ export default function FolioView() {
               Payment link
             </Button>
           )}
-          {siblings.find((s) => s.name === folio.name)?.folio_type !==
-            "Guest" &&
-            folio.charges.length === 0 &&
-            folio.payments.length === 0 &&
-            siblings.length > 1 && (
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  act(async () => {
-                    await call("kamra.api.delete_folio", { folio: folio.name })
-                    const guest = siblings.find(
-                      (s) => s.folio_type === "Guest",
-                    )
-                    navigate(
-                      guest
-                        ? `/billing/${encodeURIComponent(guest.name)}`
-                        : "/billing",
-                    )
-                  })
-                }
-                title="Delete this empty split folio"
-              >
-                Delete folio
-              </Button>
-            )}
           {open && (
             <Button
               variant="outline"
