@@ -48,7 +48,9 @@ def log_action(
 		doc = frappe.get_doc(
 			{
 				"doctype": "Agent Action Log",
-				"agent_name": agent_name or frappe.session.user,
+			"actor": getattr(frappe.session, "user", None),
+				# humans are the actor, not an "agent" — agent_name stays null
+				"agent_name": agent_name,
 				"action_type": action_type,
 				"autonomy": autonomy,
 				"approval_status": approval_status,

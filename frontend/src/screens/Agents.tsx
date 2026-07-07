@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   Bot,
   Check,
-  Clock,
   Inbox,
-  ListChecks,
   Loader2,
   Power,
   Users,
   X,
   Zap,
+  MessageSquare,
+  ScrollText,
 } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
+import Assistant from "./Assistant"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
 import {
@@ -22,7 +23,7 @@ import {
 } from "../components/ui/card"
 import { cn } from "../lib/utils"
 
-type Tab = "team" | "inbox" | "timeline"
+type Tab = "chat" | "team" | "inbox" | "timeline"
 
 interface AutonomyRule {
   action_type: string
@@ -72,22 +73,6 @@ interface PendingRow {
   after_snapshot?: Record<string, unknown> | null
 }
 
-interface TimelineRow {
-  name: string
-  agent_name: string
-  action_type: string
-  autonomy: string
-  approval_status: string
-  action_channel: string | null
-  reference_doctype: string | null
-  reference_name: string | null
-  property: string | null
-  minutes_saved: number
-  rationale: string
-  approver: string | null
-  executed_at: string | null
-  creation: string
-}
 
 interface SavingsSummary {
   days: number
@@ -119,19 +104,26 @@ const statusTone: Record<string, "zinc" | "sky" | "amber" | "rose" | "green"> = 
 }
 
 export default function Agents() {
-  const [tab, setTab] = useState<Tab>("team")
+  const [tab, setTab] = useState<Tab>("chat")
+  const [pendingCount, setPendingCount] = useState(0)
   const property = getCurrentProperty()
+
+  useEffect(() => {
+    call<unknown[]>("kamra.agents_api.pending_actions", { property })
+      .then((r) => setPendingCount(Array.isArray(r) ? r.length : 0))
+      .catch(() => setPendingCount(0))
+  }, [property, tab])
 
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <Bot className="size-6 text-brand-600" aria-hidden />
-          <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Copilot</h1>
         </div>
         <p className="text-sm text-zinc-500">
-          The team of AI helpers running your property. Everything they do is
-          logged, and money-moving actions wait for your tap.
+          Your AI workforce: give it tasks, see your AI staff, approve the
+          sensitive stuff, and audit everything anyone did — human or AI.
         </p>
       </header>
 
@@ -140,20 +132,29 @@ export default function Agents() {
         aria-label="Agents view"
         className="inline-flex rounded-lg border border-zinc-200 bg-white p-1"
       >
+        <TabButton current={tab} value="chat" onSet={setTab} icon={MessageSquare}>
+          Chat
+        </TabButton>
         <TabButton current={tab} value="team" onSet={setTab} icon={Users}>
-          Team
+          AI Staff
         </TabButton>
         <TabButton current={tab} value="inbox" onSet={setTab} icon={Inbox}>
-          Inbox
+          Approvals
+          {pendingCount > 0 && (
+            <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-700">
+              {pendingCount}
+            </span>
+          )}
         </TabButton>
-        <TabButton current={tab} value="timeline" onSet={setTab} icon={Clock}>
-          Timeline
+        <TabButton current={tab} value="timeline" onSet={setTab} icon={ScrollText}>
+          Activity
         </TabButton>
       </div>
 
+      {tab === "chat" && <Assistant />}
       {tab === "team" && <TeamTab property={property} />}
       {tab === "inbox" && <InboxTab property={property} />}
-      {tab === "timeline" && <TimelineTab property={property} />}
+      {tab === "timeline" && <ActivityTab property={property} />}
     </div>
   )
 }
@@ -651,147 +652,6 @@ function SnapshotDiff({
 // Timeline tab
 // ---------------------------------------------------------------------------
 
-function TimelineTab({ property }: { property: string }) {
-  const [rows, setRows] = useState<TimelineRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [channel, setChannel] = useState<string>("")
-  const [status, setStatus] = useState<string>("")
-
-  const load = useCallback(() => {
-    setLoading(true)
-    call<TimelineRow[]>("kamra.agents_api.agent_timeline", {
-      property,
-      channel: channel || null,
-      approval_status: status || null,
-      days: 7,
-      limit: 200,
-    })
-      .then((r) => {
-        setRows(r)
-        setError(null)
-      })
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false))
-  }, [property, channel, status])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  const grouped = useMemo(() => {
-    const byAgent = new Map<string, TimelineRow[]>()
-    for (const r of rows) {
-      const list = byAgent.get(r.agent_name) ?? []
-      list.push(r)
-      byAgent.set(r.agent_name, list)
-    }
-    return Array.from(byAgent.entries())
-  }, [rows])
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <select
-          value={channel}
-          onChange={(e) => setChannel(e.target.value)}
-          className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm"
-          aria-label="Filter by channel"
-        >
-          <option value="">All channels</option>
-          <option value="Desk">Desk</option>
-          <option value="Voice">Voice</option>
-          <option value="WhatsApp">WhatsApp</option>
-          <option value="API">API</option>
-        </select>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm"
-          aria-label="Filter by status"
-        >
-          <option value="">All statuses</option>
-          <option value="Executed">Executed</option>
-          <option value="Suggested">Suggested</option>
-          <option value="Pending">Pending</option>
-          <option value="Approved">Approved</option>
-          <option value="Rejected">Rejected</option>
-        </select>
-        <div className="ml-auto text-xs text-zinc-500 self-center">
-          {rows.length} events · last 7 days
-        </div>
-      </div>
-
-      {error && <ErrorBanner message={error} />}
-      {loading && !rows.length && <LoadingRow />}
-      {!loading && !rows.length && (
-        <EmptyState
-          icon={ListChecks}
-          title="Nothing in the last 7 days"
-          note="Try widening the filter, or wait for the agents to do something."
-        />
-      )}
-
-      <div className="space-y-4">
-        {grouped.map(([agent, list]) => (
-          <div key={agent}>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-widest text-zinc-500">
-              {agent} · {list.length}
-            </h3>
-            <ol className="space-y-1.5">
-              {list.map((row) => (
-                <li
-                  key={row.name}
-                  className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm"
-                >
-                  <Badge tone={statusTone[row.approval_status] ?? "zinc"}>
-                    {row.approval_status}
-                  </Badge>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <code className="font-mono text-xs text-zinc-700">
-                        {row.action_type}
-                      </code>
-                      {row.reference_name && (
-                        <a
-                          href={referenceLink({
-                            reference_doctype: row.reference_doctype,
-                            reference_name: row.reference_name,
-                          } as PendingRow)}
-                          className="text-xs text-brand-600 hover:underline"
-                        >
-                          {row.reference_name}
-                        </a>
-                      )}
-                      {row.minutes_saved > 0 && (
-                        <span className="text-xs text-emerald-600">
-                          +{Math.round(row.minutes_saved)}m saved
-                        </span>
-                      )}
-                    </div>
-                    {row.rationale && (
-                      <p className="mt-0.5 text-xs text-zinc-500">
-                        {row.rationale}
-                      </p>
-                    )}
-                  </div>
-                  <div className="whitespace-nowrap text-xs text-zinc-400">
-                    {relativeTime(row.executed_at || row.creation)}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Presentational helpers
-// ---------------------------------------------------------------------------
-
 function LoadingRow() {
   return (
     <p className="py-10 text-center text-sm text-zinc-400">
@@ -861,4 +721,175 @@ function referenceLink(row: {
   if (dt === "Season") return `/seasons`
   if (dt === "Service Ticket") return `/tickets`
   return "#"
+}
+
+// ---------------------------------------------------------------------------
+// Activity tab — the one ledger: everything anyone did, human or AI
+// ---------------------------------------------------------------------------
+
+interface ActivityRow {
+  name: string
+  creation: string
+  actor: string | null
+  agent_name: string | null
+  action_type: string
+  action_channel: string
+  approval_status: string
+  approver: string | null
+  reference_doctype: string | null
+  reference_name: string | null
+  rationale: string
+  minutes_saved: number
+}
+
+const prettyAction = (t: string) =>
+  t.replace(/^copilot_/, "").replace(/_/g, " ")
+
+const fmtWhen = (d: string) =>
+  new Date(d.replace(" ", "T")).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+
+function ActivityTab({ property }: { property: string }) {
+  const [rows, setRows] = useState<ActivityRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [kind, setKind] = useState("")
+  const [page, setPage] = useState(0)
+  const PAGE = 50
+
+  const load = useCallback(() => {
+    setLoading(true)
+    call<ActivityRow[]>("kamra.agents_api.activity_feed", {
+      property,
+      actor_kind: kind || null,
+      limit: PAGE,
+      start: page * PAGE,
+    })
+      .then((r) => {
+        setRows(r)
+        setError(null)
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [property, kind, page])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={kind}
+          onChange={(e) => {
+            setKind(e.target.value)
+            setPage(0)
+          }}
+          className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-sm"
+          aria-label="Filter by who acted"
+        >
+          <option value="">Everyone</option>
+          <option value="human">Humans only</option>
+          <option value="agent">AI staff only</option>
+        </select>
+        <p className="text-xs text-zinc-400">
+          Every action on the property, newest first — who did it, what, and
+          who approved it.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
+      {loading ? (
+        <LoadingRow />
+      ) : rows.length === 0 ? (
+        <p className="py-8 text-center text-sm text-zinc-400">
+          Nothing logged yet.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
+                <th className="px-3 py-2">When</th>
+                <th className="px-3 py-2">Who</th>
+                <th className="px-3 py-2">What</th>
+                <th className="px-3 py-2">On</th>
+                <th className="px-3 py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {rows.map((r) => (
+                <tr key={r.name}>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-zinc-500">
+                    {fmtWhen(r.creation)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    {r.agent_name ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Bot className="size-3.5 text-brand-600" aria-hidden />
+                        <span className="font-medium">{r.agent_name}</span>
+                      </span>
+                    ) : (
+                      <span className="font-medium">
+                        {(r.actor ?? "system").split("@")[0]}
+                      </span>
+                    )}
+                  </td>
+                  <td className="max-w-md px-3 py-2">
+                    <span className="font-medium capitalize">
+                      {prettyAction(r.action_type)}
+                    </span>
+                    {r.rationale && (
+                      <span className="text-zinc-500"> — {r.rationale}</span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-zinc-400">
+                    {r.reference_name ?? "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <Badge tone={statusTone[r.approval_status] ?? "zinc"}>
+                      {r.approval_status}
+                    </Badge>
+                    {r.approver && (
+                      <span className="ml-1 text-xs text-zinc-400">
+                        by {r.approver.split("@")[0]}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="flex items-center justify-between text-sm text-zinc-500">
+        <span>Page {page + 1}</span>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            disabled={page === 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+          >
+            Prev
+          </Button>
+          <Button
+            variant="outline"
+            disabled={rows.length < PAGE}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }

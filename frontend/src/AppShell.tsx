@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from "react"
 import {
   BadgePercent,
   BedDouble,
-  Bot,
   Briefcase,
   Building2,
   CalendarDays,
@@ -103,15 +102,6 @@ const NAV: NavGroup[] = [
       { to: "/tickets", label: "Tickets", icon: Ticket },
       { to: "/lost-found", label: "Lost & Found", icon: PackageSearch },
       { to: "/shifts", label: "Shifts", icon: Clock },
-    ],
-  },
-  {
-    // Agents live between Operations and Finance in daily importance: they
-    // touch both, and the Inbox is where the owner's tap-to-approve happens.
-    label: "Agents",
-    roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
-    items: [
-      { to: "/agents", label: "Team & Inbox", icon: Bot },
     ],
   },
   {

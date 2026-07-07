@@ -9,6 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "agent_name",
+  "actor",
   "action_type",
   "column_break_a",
   "autonomy",
@@ -37,6 +38,13 @@
    "in_list_view": 1,
    "label": "Agent Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "actor",
+   "fieldtype": "Link",
+   "label": "Actor (User)",
+   "options": "User",
+   "description": "The signed-in user who performed or triggered this action"
   },
   {
    "fieldname": "action_type",
@@ -90,7 +98,7 @@
    "options": "reference_doctype"
   },
   {
-   "description": "When the underlying action actually ran (may differ from creation for Pending → Approved rows)",
+   "description": "When the underlying action actually ran (may differ from creation for Pending \u2192 Approved rows)",
    "fieldname": "executed_at",
    "fieldtype": "Datetime",
    "label": "Executed At"
@@ -114,7 +122,7 @@
    "label": "Minutes Saved"
   },
   {
-   "description": "Set when a Pending action is Approved or Rejected — the human on the hook",
+   "description": "Set when a Pending action is Approved or Rejected \u2014 the human on the hook",
    "fieldname": "approver",
    "fieldtype": "Link",
    "label": "Approver",
@@ -127,7 +135,7 @@
    "label": "Snapshots (undo)"
   },
   {
-   "description": "JSON of the reference doc immediately before the action ran — enables undo and audit diffs",
+   "description": "JSON of the reference doc immediately before the action ran \u2014 enables undo and audit diffs",
    "fieldname": "before_snapshot",
    "fieldtype": "Long Text",
    "label": "Before Snapshot"

@@ -1508,6 +1508,10 @@ def check_in(reservation: str, room: str | None = None):
 		doc.room = room
 	doc.status = "Checked In"
 	doc.save()
+	from kamra.savings import log_action
+	log_action("check_in", "Reservation", doc.name, doc.property,
+	           rationale=f"{doc.guest_name} into "
+	                     f"{(doc.room or '').split('-')[-1] or 'unassigned'}")
 	return {"ok": True, "reservation": doc.name, "room": doc.room}
 
 
@@ -1698,6 +1702,9 @@ def check_out(reservation: str):
 	doc.status = "Checked Out"
 	doc.save()
 	_scrub_stay_ids(doc)
+	from kamra.savings import log_action
+	log_action("check_out", "Reservation", doc.name, doc.property,
+	           rationale=f"{doc.guest_name} departed")
 	return {"ok": True, "reservation": doc.name}
 
 
