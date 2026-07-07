@@ -137,6 +137,7 @@ export const APPS: AppDef[] = [
     tier: "premium",
     roles: ["Revenue Manager", "Hotel Admin", "System Manager", "Administrator"],
     items: [
+      { to: "/revenue-reports", label: "Revenue Reports", icon: PiggyBank },
       { to: "/rate-plans", label: "Rate Plans", icon: Tags },
       { to: "/seasons", label: "Seasons", icon: CalendarDays },
       { to: "/guardrails", label: "Guardrails", icon: ShieldCheck },

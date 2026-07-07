@@ -129,3 +129,119 @@ def manager_flash(property: str, date: str | None = None):
 		"trend": trend[-14:],
 		"outlook": outlook,
 	}
+
+
+def _month_bounds(period: str):
+	"""'2026-07' -> (first day, first day of next month, days in month)."""
+	from frappe.utils import get_first_day, get_last_day, date_diff, add_days
+	from datetime import datetime
+
+	start = get_first_day(datetime.strptime(period + "-01", "%Y-%m-%d"))
+	last = get_last_day(start)
+	nxt = add_days(last, 1)
+	return str(start), str(nxt), date_diff(nxt, start)
+
+
+@frappe.whitelist()
+@require_roles("Finance", "Revenue Manager", "Kamra Agent")
+def budget_vs_actual(property: str, period: str | None = None):
+	"""Monthly target vs actual: room revenue, occupancy %, ADR, RevPAR - with
+	variance. period is 'YYYY-MM' (defaults to the current month)."""
+	from frappe.utils import nowdate
+
+	period = period or nowdate()[:7]
+	start, nxt, days = _month_bounds(period)
+	total_rooms = frappe.db.count("Room", {"property": property}) or 0
+	room_nights = total_rooms * days
+
+	agg = frappe.db.sql(
+		"""
+		SELECT
+		  COUNT(DISTINCT CASE WHEN fc.charge_type='Room'
+		        THEN CONCAT(COALESCE(fc.reservation,f.reservation),'|',fc.posting_date) END) AS rooms_sold,
+		  COALESCE(SUM(CASE WHEN fc.charge_type='Room' THEN fc.amount ELSE 0 END),0) AS room_revenue
+		FROM `tabFolio Charge` fc JOIN `tabFolio` f ON fc.parent=f.name
+		WHERE f.property=%(p)s AND fc.posting_date>=%(s)s AND fc.posting_date<%(n)s
+		""",
+		{"p": property, "s": start, "n": nxt}, as_dict=True)[0]
+	sold = int(agg.rooms_sold or 0)
+	room_rev = float(agg.room_revenue or 0)
+
+	actual = {
+		"room_revenue": round(room_rev, 0),
+		"occupancy_pct": round(100 * sold / room_nights, 1) if room_nights else 0,
+		"adr": round(room_rev / sold, 0) if sold else 0,
+		"revpar": round(room_rev / room_nights, 0) if room_nights else 0,
+	}
+	b = frappe.db.get_value(
+		"Revenue Budget", {"property": property, "period": period},
+		["name", "room_revenue_target", "occupancy_target", "adr_target",
+		 "revpar_target"], as_dict=True) or {}
+	target = {
+		"room_revenue": float(b.get("room_revenue_target") or 0),
+		"occupancy_pct": float(b.get("occupancy_target") or 0),
+		"adr": float(b.get("adr_target") or 0),
+		"revpar": float(b.get("revpar_target") or 0),
+	}
+	rows = []
+	for key, label in [("room_revenue", "Room Revenue"),
+	                   ("occupancy_pct", "Occupancy %"),
+	                   ("adr", "ADR / ARR"), ("revpar", "RevPAR")]:
+		a, t = actual[key], target[key]
+		rows.append({
+			"metric": label, "key": key, "actual": a, "target": t,
+			"variance": round(a - t, 1),
+			"attainment": round(100 * a / t, 0) if t else None,
+		})
+	return {"period": period, "days_elapsed": min(
+		days, max(0, __import__("frappe").utils.date_diff(nowdate(), start) + 1)),
+		"total_days": days, "rows": rows, "has_budget": bool(b)}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Revenue Manager", "Hotel Admin", "Finance")
+def save_budget(property: str, period: str, room_revenue_target: float = 0,
+                occupancy_target: float = 0, adr_target: float = 0,
+                revpar_target: float = 0):
+	name = frappe.db.get_value(
+		"Revenue Budget", {"property": property, "period": period})
+	doc = frappe.get_doc("Revenue Budget", name) if name \
+		else frappe.new_doc("Revenue Budget")
+	doc.update({
+		"property": property, "period": period,
+		"room_revenue_target": room_revenue_target,
+		"occupancy_target": occupancy_target,
+		"adr_target": adr_target, "revpar_target": revpar_target,
+	})
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist()
+@require_roles("Finance", "Revenue Manager", "Kamra Agent")
+def contribution(property: str, from_date: str, to_date: str,
+                 by: str = "source"):
+	"""Who brings the business: revenue + room nights + share, grouped by
+	booking source, company or travel agent. by = source | company | travel_agent."""
+	col = {"source": "r.source", "company": "r.company",
+	       "travel_agent": "r.travel_agent"}.get(by, "r.source")
+	rows = frappe.db.sql(
+		f"""
+		SELECT COALESCE({col}, 'Direct') AS label,
+		       COUNT(*) AS bookings,
+		       COALESCE(SUM(r.nights),0) AS room_nights,
+		       COALESCE(SUM(r.amount_after_tax),0) AS revenue
+		FROM `tabReservation` r
+		WHERE r.property=%(p)s
+		  AND r.status IN ('Confirmed','Checked In','Checked Out')
+		  AND r.check_in_date>=%(f)s AND r.check_in_date<=%(t)s
+		GROUP BY label
+		ORDER BY revenue DESC
+		""",
+		{"p": property, "f": from_date, "t": to_date}, as_dict=True)
+	total = sum(float(x.revenue or 0) for x in rows) or 1
+	for x in rows:
+		x["revenue"] = round(float(x.revenue or 0), 0)
+		x["share"] = round(100 * x["revenue"] / total, 1)
+	return {"by": by, "total": round(total, 0), "rows": rows}
