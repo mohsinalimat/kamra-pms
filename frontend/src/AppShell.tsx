@@ -99,7 +99,7 @@ const NAV: NavGroup[] = [
     roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
     items: [
       { to: "/housekeeping", label: "Housekeeping", icon: ListChecks },
-      { to: "/tickets", label: "Tickets", icon: Ticket },
+      { to: "/tickets", label: "Guest Requests", icon: Ticket },
       { to: "/lost-found", label: "Lost & Found", icon: PackageSearch },
       { to: "/shifts", label: "Shifts", icon: Clock },
     ],
@@ -110,7 +110,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/billing", label: "Billing", icon: Receipt },
       { to: "/reports", label: "Reports", icon: IndianRupee },
-      { to: "/companies", label: "Corporate", icon: Building2 },
+      { to: "/companies", label: "Companies", icon: Building2 },
     ],
   },
   {

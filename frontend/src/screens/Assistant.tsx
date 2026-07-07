@@ -59,7 +59,7 @@ export default function Assistant() {
   }, [refreshList])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" })
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
   }, [msgs, busy])
 
   async function openConvo(name: string) {
@@ -179,7 +179,7 @@ export default function Assistant() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] gap-4">
+    <div className="flex h-[calc(100vh-16rem)] min-h-[480px] gap-4">
       {/* conversations */}
       <div className="hidden w-64 shrink-0 flex-col rounded-xl border border-zinc-200 bg-white sm:flex">
         <div className="p-2">

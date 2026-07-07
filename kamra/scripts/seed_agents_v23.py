@@ -120,7 +120,7 @@ def _wire_front_desk(property_name: str | None) -> str:
 		property_name,
 		"Front Desk Copilot",
 		{
-			"agent_name": "Ravi",
+			"agent_name": "NOVA",
 			"active": 1,
 			"trigger_type": "Event",
 			"channel": "Desk",
@@ -152,7 +152,7 @@ def _wire_night_auditor(property_name: str | None) -> str:
 		property_name,
 		"Night Auditor",
 		{
-			"agent_name": "Vikram",
+			"agent_name": "IRA",
 			"active": 1,
 			"trigger_type": "Cron",
 			"schedule_cron": "0 3 * * *",
@@ -175,7 +175,7 @@ def _wire_owner_digest(property_name: str | None) -> str:
 		property_name,
 		"Owner Digest",
 		{
-			"agent_name": "The Boss",
+			"agent_name": "TARA",
 			"active": 1,
 			"trigger_type": "Cron",
 			"schedule_cron": "0 8 * * 0",

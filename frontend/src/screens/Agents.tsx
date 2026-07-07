@@ -301,6 +301,26 @@ function SavingsBanner({ s }: { s: SavingsSummary }) {
   )
 }
 
+
+// Plain hotel lingo for the starter agents — what they do, not how.
+const personaBlurb: Record<string, string> = {
+  "Front Desk Copilot":
+    "Answers and acts at the desk — quotes, bookings, check-ins, payments — whenever staff ask.",
+  "Night Auditor":
+    "Closes the day every night: posts room charges and flags no-shows, so nobody stays up for it.",
+  "Owner Digest":
+    "Sends the owner a plain-English summary of the week's numbers, every Sunday morning.",
+}
+
+function humanTrigger(a: AgentRow): string {
+  if (a.trigger_type === "Event") return "Works on demand"
+  if (a.trigger_type === "Webhook") return "Replies to messages"
+  const c = (a.schedule_cron || "").trim()
+  if (c === "0 3 * * *") return "Runs nightly at 3:00 am"
+  if (c === "0 8 * * 0") return "Every Sunday, 8:00 am"
+  return "Runs on a schedule"
+}
+
 function AgentCard({
   agent,
   busy,
@@ -333,6 +353,11 @@ function AgentCard({
               {agent.persona}
               {agent.property ? ` · ${agent.property}` : " · Chain-global"}
             </div>
+            {personaBlurb[agent.persona] && (
+              <p className="mt-1.5 max-w-xs text-sm text-zinc-600">
+                {personaBlurb[agent.persona]}
+              </p>
+            )}
           </div>
           <button
             onClick={onToggle}
@@ -355,12 +380,8 @@ function AgentCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-1.5">
-          <Badge tone={tone}>{agent.trigger_type}</Badge>
-          {agent.trigger_type === "Cron" && agent.schedule_cron && (
-            <Badge tone="zinc">cron: {agent.schedule_cron}</Badge>
-          )}
+          <Badge tone={tone}>{humanTrigger(agent)}</Badge>
           <Badge tone="zinc">{agent.channel}</Badge>
-          {agent.model && <Badge tone="zinc">{agent.model}</Badge>}
         </div>
 
         <dl className="grid grid-cols-3 gap-2 text-xs">
@@ -378,6 +399,12 @@ function AgentCard({
               Show tools & rules
             </summary>
             <div className="mt-2 space-y-2">
+              <div className="flex flex-wrap gap-1.5 text-zinc-400">
+                {agent.trigger_type === "Cron" && agent.schedule_cron && (
+                  <span>schedule: {agent.schedule_cron}</span>
+                )}
+                {agent.model && <span>model: {agent.model}</span>}
+              </div>
               <ToolList tools={agent.tools} />
               <AutonomyList rules={agent.autonomy_rules} />
             </div>
