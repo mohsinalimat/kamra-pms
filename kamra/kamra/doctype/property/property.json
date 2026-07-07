@@ -33,6 +33,7 @@
   "cancellation_fee",
   "no_show_charge",
   "deposit_pct",
+  "locale",
   "sb_gst",
   "gst_mode",
   "gst_slab_threshold",
@@ -169,6 +170,12 @@
    "fieldname": "disabled",
    "fieldtype": "Check",
    "label": "Disabled"
+  },
+  {
+   "fieldname": "locale",
+   "fieldtype": "Data",
+   "label": "Locale",
+   "default": "en-IN"
   },
   {
    "fieldname": "sb_gst",

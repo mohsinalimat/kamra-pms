@@ -10,7 +10,12 @@ from decimal import Decimal
 import frappe
 from frappe.utils import add_days, getdate, now_datetime, nowdate
 
-FNB_GST = 5.0  # F&B / meal-plan GST rate
+FNB_GST = 5.0  # F&B / meal-plan GST rate (India default; kept for imports)
+
+
+def _fnb_gst(property):
+	from kamra.localization import pack_for
+	return pack_for(property).fnb_tax_rate(property)
 
 
 def _recalculate(folio):
@@ -273,7 +278,7 @@ def post_room_night(reservation, date, folios=None) -> bool:
 				"qty": 1,
 				"rate": meal_amount,
 				"amount": meal_amount,
-				"gst_rate": FNB_GST,
+				"gst_rate": _fnb_gst(reservation.property),
 				"auto_posted": 1,
 			})
 

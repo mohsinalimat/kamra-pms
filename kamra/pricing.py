@@ -60,15 +60,12 @@ def season_adjust(property: str, date, base: Decimal) -> Decimal:
 
 
 def room_gst_rate(property: str, room_type_doc, nightly_rate: Decimal) -> Decimal:
-	"""GST rate for one room night. Slab mode (India default): the nightly
-	tariff decides the slab. Fixed mode: the room type's tax_percent."""
-	prop = frappe.get_cached_doc("Property", property)
-	if (prop.get("gst_mode") or "Slab") == "Fixed":
-		return _dec(room_type_doc.tax_percent)
-	threshold = _dec(prop.get("gst_slab_threshold") or 7500)
-	low = _dec(prop.get("gst_rate_low") or 5)
-	high = _dec(prop.get("gst_rate_high") or 18)
-	return low if nightly_rate <= threshold else high
+	"""Room-night tax rate, resolved by the property's localization pack
+	(India = GST slab/fixed; other countries = their own). Kept named
+	room_gst_rate for its many callers; the logic lives in the pack."""
+	from kamra.localization import pack_for
+	return pack_for(property).calculate_room_tax(
+		property, room_type_doc, nightly_rate)
 
 
 def rates_include_tax(property: str) -> bool:
@@ -151,7 +148,8 @@ def quote(
 		if old_room_total:
 			room_tax *= room_total / old_room_total
 
-	from kamra.folio import FNB_GST
+	from kamra.folio import _fnb_gst
+	FNB_GST = _fnb_gst(property)
 
 	billable_nights = max(nights, 1)
 	meal_total = Decimal(0)

@@ -173,6 +173,11 @@ function SettingsCard(props: {
 const PROPERTY_SPECS: Spec[] = [
   { field: "property_name", label: "Property name" },
   { field: "legal_name", label: "Legal name" },
+  {
+    field: "country",
+    label: "Country",
+    hint: "Selects the tax & invoicing pack. India today; more via the Marketplace.",
+  },
   { field: "phone", label: "Phone" },
   { field: "email", label: "Email" },
   { field: "website", label: "Website" },

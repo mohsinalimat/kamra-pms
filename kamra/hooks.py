@@ -43,6 +43,12 @@ scheduler_events = {
 
 required_apps = ["payments"]
 
+# Localization packs by country (regional_overrides style). A future
+# kamra_uae APP declares its own to claim "United Arab Emirates".
+kamra_localization = {
+	"India": "kamra.localization.india",
+}
+
 # Served single-page app
 # -----------------------
 # The React front-end mounts at /kamra and owns all client-side routes

@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRightLeft, Printer, X } from "lucide-react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { call, getCurrentProperty } from "../lib/api"
 import LinkedRecords from "../components/LinkedRecords"
+import { loadLocale, taxRates } from "../lib/money"
 import { serverError } from "../lib/resource"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
@@ -148,6 +149,10 @@ export default function FolioView() {
 
   useEffect(load, [load])
 
+  const [rates, setRates] = useState<number[]>(taxRates())
+  useEffect(() => {
+    loadLocale().then((l) => setRates(l.tax_rates))
+  }, [])
   useEffect(() => {
     call<{ required: boolean; has_pin: boolean }>(
       "kamra.api.cashier_pin_status",
@@ -864,7 +869,7 @@ export default function FolioView() {
                   setCharge({ ...charge, gst_rate: e.target.value })
                 }
               >
-                {["0", "5", "12", "18", "28"].map((r) => (
+                {rates.map((n) => String(n)).map((r) => (
                   <option key={r} value={r}>
                     GST {r}%
                   </option>
@@ -921,7 +926,7 @@ export default function FolioView() {
                       setAllowance({ ...allowance, gst_rate: e.target.value })
                     }
                   >
-                    {["0", "5", "12", "18", "28"].map((r) => (
+                    {rates.map((n) => String(n)).map((r) => (
                       <option key={r} value={r}>
                         GST {r}%
                       </option>

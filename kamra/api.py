@@ -932,6 +932,9 @@ def folio_invoice(folio: str):
 		slot["taxable"] += float(c.amount or 0)
 		slot["tax"] += float(c.gst_amount or 0)
 
+	from kamra.localization import pack_for
+	_loc_ctx = pack_for(doc.property).invoice_context(prop)
+
 	# B2B: corporate bookings carry the buyer's GSTIN on the invoice.
 	# A group master folio bills to the GROUP's company.
 	bill_to = None
@@ -956,10 +959,11 @@ def folio_invoice(folio: str):
 			"address": ", ".join(filter(None, [prop.address_line, prop.city,
 			                                   prop.state, prop.pincode])),
 			"gstin": prop.gstin, "phone": prop.phone, "email": prop.email,
-			# SAC 996311 = hotel/guest-house accommodation; place of supply for
-			# accommodation is where the hotel is (intra-state → CGST + SGST).
-			"sac": "996311",
-			"place_of_supply": prop.state,
+			# country pack owns the service code + place-of-supply rule
+			"sac": _loc_ctx["sac"],
+			"place_of_supply": _loc_ctx["place_of_supply"],
+			"tax_label": _loc_ctx["tax_label"],
+			"tax_id_label": _loc_ctx["tax_id_label"],
 		},
 		"stay": {
 			"reservation": res.name,
@@ -974,7 +978,9 @@ def folio_invoice(folio: str):
 		},
 		"gst_summary": [
 			{"rate": rate, "taxable": v["taxable"],
-			 "cgst": v["tax"] / 2, "sgst": v["tax"] / 2, "total_tax": v["tax"]}
+			 "cgst": v["tax"] * float(_loc_ctx["split"][0][1]),
+			 "sgst": v["tax"] * float(_loc_ctx["split"][-1][1]),
+			 "total_tax": v["tax"]}
 			for rate, v in sorted(by_rate.items())
 		],
 	}
@@ -2563,3 +2569,14 @@ def linked_records(doctype: str, name: str):
 		out["group_name"] = frappe.db.get_value(
 			"Group Booking", out["group_booking"], "group_name")
 	return out
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Finance", "Revenue Manager", "Housekeeping", "Kamra Agent")
+def property_locale(property: str):
+	"""Currency, number locale and tax vocabulary for this property, from its
+	localization pack. Drives the frontend's money formatting and tax dropdowns
+	so no screen hardcodes ₹ or GST %."""
+	from kamra.localization import pack_for
+	prop = frappe.get_cached_doc("Property", property)
+	return pack_for(property).locale(prop)
