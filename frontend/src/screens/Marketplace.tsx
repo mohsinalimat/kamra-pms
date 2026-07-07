@@ -7,7 +7,7 @@ import { serverError } from "../lib/resource"
 import { Button } from "../components/ui/button"
 
 interface Card {
-  kind: "module" | "connector" | "bench_app"
+  kind: "module" | "connector" | "bench_app" | "enterprise"
   name: string
   blurb: string
   tier?: "core" | "premium"
@@ -41,6 +41,7 @@ const STATUS_STYLE: Record<string, string> = {
   connected: "bg-emerald-50 text-emerald-700",
   configure: "bg-amber-50 text-amber-700",
   available: "bg-sky-50 text-sky-700",
+  enterprise: "bg-violet-50 text-violet-700",
   planned: "bg-zinc-100 text-zinc-500",
 }
 const STATUS_LABEL: Record<string, string> = {
@@ -48,6 +49,7 @@ const STATUS_LABEL: Record<string, string> = {
   connected: "Connected",
   configure: "Set up",
   available: "Available",
+  enterprise: "Enterprise",
   planned: "Planned",
 }
 
@@ -75,6 +77,7 @@ export default function Marketplace() {
   const [phone, setPhone] = useState("")
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<HeyKoalaResult | null>(null)
+  const [enquired, setEnquired] = useState<Set<string>>(new Set())
   const navigate = useNavigate()
   const property = getCurrentProperty()
 
@@ -170,6 +173,28 @@ export default function Marketplace() {
                         <Copyable value={c.command} />
                       </span>
                     </div>
+                  )}
+                  {c.kind === "enterprise" && (
+                    enquired.has(c.name) ? (
+                      <p className="mt-3 text-sm text-violet-700">
+                        Thanks - our team will reach out about {c.name}.
+                      </p>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="mt-3"
+                        onClick={() =>
+                          call("kamra.marketplace.enterprise_enquiry", {
+                            property,
+                            item: c.name,
+                          }).then(() =>
+                            setEnquired((s) => new Set(s).add(c.name)),
+                          )
+                        }
+                      >
+                        Request implementation
+                      </Button>
+                    )
                   )}
                   {c.kind === "connector" &&
                     c.action === "route" &&

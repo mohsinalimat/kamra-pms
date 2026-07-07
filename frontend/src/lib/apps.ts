@@ -18,6 +18,7 @@ import {
   Clock,
   Code2,
   ExternalLink,
+  FileSpreadsheet,
   Home,
   IndianRupee,
   Landmark,
@@ -158,6 +159,7 @@ export const APPS: AppDef[] = [
     items: [
       { to: "/billing", label: "Billing", icon: Receipt },
       { to: "/reports", label: "Reports", icon: IndianRupee },
+      { to: "/accounting-export", label: "Accounting Export", icon: FileSpreadsheet },
     ],
     extraPrefixes: ["/billing/"],
   },

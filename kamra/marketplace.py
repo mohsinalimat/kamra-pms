@@ -79,6 +79,17 @@ def registry(property: str):
 			],
 		},
 		{
+			"category": "Distribution",
+			"blurb": "Sync rates and availability across OTAs. Delivered as an "
+			         "enterprise integration tailored to your channel mix.",
+			"cards": [
+				_enterprise("Channel Manager",
+				            "Two-way OTA sync (Booking.com, MakeMyTrip, Agoda "
+				            "and more) via a channel-manager partner - scoped "
+				            "and connected for your property."),
+			],
+		},
+		{
 			"category": "AI",
 			"blurb": "Bring your own model, or your own Claude.",
 			"cards": [
@@ -109,12 +120,15 @@ def registry(property: str):
 			"blurb": "Push closed folios to your books - Kamra keeps the "
 			         "front office, your ledger keeps compliance.",
 			"cards": [
+				_connector("Accounting export", "export",
+				           "Download closed invoices as Tally, Zoho or ERPNext "
+				           "import files - your books, your ledger.",
+				           action="route", route="/accounting-export",
+				           status="available"),
 				_bench("ERPNext + India Compliance",
 				       "Post invoices to ERPNext; e-invoice (IRN), e-way bill "
 				       "and GSTR filing via the India Compliance app.",
 				       "bench get-app india_compliance"),
-				_bench("Tally export", "Export vouchers for Tally import.",
-				       None, status="planned"),
 			],
 		},
 		{
@@ -147,6 +161,11 @@ def _connector(name, key, blurb, action=None, route=None, channel=None,
 	return {"kind": "connector", "name": name, "key": key, "blurb": blurb,
 	        "action": action, "route": route, "channel": channel,
 	        "status": status, "detail": detail, "connection": connection}
+
+
+def _enterprise(name, blurb):
+	return {"kind": "enterprise", "name": name, "blurb": blurb,
+	        "status": "enterprise"}
 
 
 def _bench(name, blurb, command, status="planned"):
@@ -202,4 +221,17 @@ def connect_heykoala(property: str, channel: str, phone_number: str):
 def disconnect_channel(connection: str):
 	frappe.db.set_value("Channel Provider Connection", connection, "active", 0)
 	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Hotel Admin", "System Manager")
+def enterprise_enquiry(property: str, item: str, note: str = "",
+                       contact: str = ""):
+	"""Register interest in an enterprise / custom integration. Lands in the
+	Activity log for the team to follow up - no obligation, no auto-provision."""
+	from kamra.savings import log_action
+	log_action("enterprise_enquiry", "Property", property, property,
+	           rationale=f"{item} - {note or 'requested'} "
+	                     f"({contact or frappe.session.user})")
 	return {"ok": True}

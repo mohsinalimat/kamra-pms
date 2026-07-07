@@ -33,6 +33,7 @@ import AppLauncher from "./screens/AppLauncher"
 import Marketplace from "./screens/Marketplace"
 import Reports from "./screens/Reports"
 import RevenueReports from "./screens/RevenueReports"
+import AccountingExport from "./screens/AccountingExport"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
 import Today from "./screens/Today"
@@ -243,6 +244,7 @@ export default function App() {
           <Route path="developers" element={<Developers />} />
           <Route path="reports" element={<Reports />} />
           <Route path="revenue-reports" element={<RevenueReports />} />
+          <Route path="accounting-export" element={<AccountingExport />} />
           <Route path="tickets" element={<Tickets />} />
           <Route
             path="housekeeping"
