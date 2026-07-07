@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ComponentType } from "react"
-import { Columns3, Plus, Search, Trash2 } from "lucide-react"
+import { Columns3, Download, Plus, Search, Trash2 } from "lucide-react"
 import { Sheet } from "./ui/sheet"
 import { getCurrentProperty } from "../lib/api"
 import {
@@ -39,6 +39,8 @@ export interface ScreenConfig {
   filters?: { field: string; label: string; options: string[] }[]
   /** Rows per page (adds pagination when set). */
   pageSize?: number
+  /** Date-range filter on this date field (adds From/To pickers). */
+  dateFilter?: { field: string; label: string }
   /** Custom section rendered in the drawer below the form (existing rows only). */
   extra?: ComponentType<{ row: Row; reload: () => void }>
   /** Replace the generic edit form with a bespoke detail panel (existing rows).
@@ -139,6 +141,19 @@ function FieldInput(props: {
   }
 }
 
+const BADGE_TONES: Record<string, "green" | "sky" | "amber" | "rose" | "zinc"> = {
+  Confirmed: "green", "Checked In": "sky", "Checked Out": "zinc",
+  Cancelled: "rose", "No Show": "rose", Waitlist: "amber",
+  Open: "amber", Closed: "zinc", Enquiry: "amber", Completed: "zinc",
+  Clean: "green", Dirty: "amber", Inspected: "sky", "Out of Order": "rose",
+  "In Progress": "sky", Done: "green",
+}
+
+const cellValue = (v: unknown) =>
+  typeof v === "number"
+    ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 })
+    : String(v ?? "-")
+
 export function ResourceScreen({ config }: { config: ScreenConfig }) {
   const [rows, setRows] = useState<Row[]>([])
   const [editing, setEditing] = useState<Row | "new" | null>(null)
@@ -170,6 +185,8 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
   const visibleCols = config.columns.filter((c) => !hiddenCols.has(c.field))
   const [debounced, setDebounced] = useState("")
   const [filterVals, setFilterVals] = useState<Record<string, string>>({})
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
   const [page, setPage] = useState(0)
 
   const pageSize = config.pageSize ?? 0
@@ -185,7 +202,7 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
   }, [search])
 
   // any search/filter change resets to the first page
-  useEffect(() => setPage(0), [debounced, filterVals])
+  useEffect(() => setPage(0), [debounced, filterVals, dateFrom, dateTo])
 
   const load = useCallback(() => {
     const filters: (string | number)[][] = []
@@ -193,6 +210,10 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
       filters.push(["property", "=", getCurrentProperty()])
     for (const [field, val] of Object.entries(filterVals))
       if (val) filters.push([field, "=", val])
+    if (config.dateFilter?.field) {
+      if (dateFrom) filters.push([config.dateFilter.field, ">=", dateFrom])
+      if (dateTo) filters.push([config.dateFilter.field, "<=", dateTo])
+    }
     const orFilters =
       debounced && config.searchFields?.length
         ? config.searchFields.map((f) => [f, "like", `%${debounced}%`])
@@ -211,9 +232,47 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
       })
       .catch((e) => setError(serverError(e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.doctype, debounced, filterVals, page])
+  }, [config.doctype, debounced, filterVals, page, dateFrom, dateTo])
 
   useEffect(load, [load])
+
+  async function exportCsv() {
+    const filters: (string | number)[][] = []
+    if (config.propertyScoped)
+      filters.push(["property", "=", getCurrentProperty()])
+    for (const [field, val] of Object.entries(filterVals))
+      if (val) filters.push([field, "=", val])
+    if (config.dateFilter?.field) {
+      if (dateFrom) filters.push([config.dateFilter.field, ">=", dateFrom])
+      if (dateTo) filters.push([config.dateFilter.field, "<=", dateTo])
+    }
+    const orFilters =
+      debounced && config.searchFields?.length
+        ? config.searchFields.map((f) => [f, "like", `%${debounced}%`])
+        : undefined
+    const all = await listResource(config.doctype, {
+      fields,
+      filters: filters.length ? filters : undefined,
+      orFilters,
+      orderBy: config.orderBy,
+      limit: 2000,
+    })
+    const cols = visibleCols
+    const esc = (v: unknown) => {
+      const t = String(v ?? "")
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t
+    }
+    const csv = [
+      cols.map((c) => esc(c.label)).join(","),
+      ...all.map((r) => cols.map((c) => esc(r[c.field])).join(",")),
+    ].join("\n")
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" })
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = `${config.doctype.toLowerCase().replace(/ /g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
 
   // load link options once per screen
   useEffect(() => {
@@ -327,7 +386,47 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
                 ))}
               </select>
             ))}
-            <div className="relative ml-auto">
+            {config.dateFilter && (
+              <div className="flex items-center gap-1.5 text-sm text-zinc-500">
+                <span className="text-xs">{config.dateFilter.label}</span>
+                <input
+                  type="date"
+                  aria-label={`${config.dateFilter.label} from`}
+                  className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+                <span className="text-xs">to</span>
+                <input
+                  type="date"
+                  aria-label={`${config.dateFilter.label} to`}
+                  className="rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+                {(dateFrom || dateTo) && (
+                  <button
+                    className="text-xs text-zinc-400 hover:text-zinc-600"
+                    onClick={() => {
+                      setDateFrom("")
+                      setDateTo("")
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="relative ml-auto flex items-center gap-2">
+              <button
+                onClick={exportCsv}
+                title="Download the current view as CSV (Excel-ready)"
+                aria-label="Export as CSV"
+                className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+              >
+                <Download className="size-4" aria-hidden />
+                Export
+              </button>
               <button
                 onClick={() => setColsOpen((o) => !o)}
                 title="Choose which columns this table shows"
@@ -382,11 +481,23 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
                   onClick={() => openEdit(row)}
                 >
                   {visibleCols.map((c) => (
-                    <td key={c.field} className="py-2.5 pr-4">
+                    <td
+                      key={c.field}
+                      className={
+                        "py-2.5 pr-4" +
+                        (typeof row[c.field] === "number"
+                          ? " text-right tabular-nums"
+                          : "")
+                      }
+                    >
                       {c.badge && row[c.field] ? (
-                        <Badge tone="zinc">{String(row[c.field])}</Badge>
+                        <Badge
+                          tone={BADGE_TONES[String(row[c.field])] ?? "zinc"}
+                        >
+                          {String(row[c.field])}
+                        </Badge>
                       ) : (
-                        String(row[c.field] ?? "-")
+                        cellValue(row[c.field])
                       )}
                     </td>
                   ))}

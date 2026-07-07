@@ -262,7 +262,7 @@ export function CommandPalette() {
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Concierge - find a guest, a booking, or jump to any screen…"
+            placeholder="Search - find a guest, a booking, or jump to any screen…"
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-zinc-400"
           />
           {searching ? (

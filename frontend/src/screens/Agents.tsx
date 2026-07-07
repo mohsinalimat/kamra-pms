@@ -8,6 +8,7 @@ import {
   Users,
   X,
   Zap,
+  MessageSquare,
   Plug,
   Sparkles,
 } from "lucide-react"
@@ -130,12 +131,26 @@ export default function Agents() {
           NOVA, your AI front desk. Ask, and it does.
         </p>
         <div className="ml-auto flex items-center gap-2">
+          {panel !== "none" && (
+            <button
+              onClick={() => setPanel("none")}
+              className="flex items-center gap-1.5 rounded-full bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
+            >
+              <MessageSquare className="size-4" aria-hidden />
+              Back to chat
+            </button>
+          )}
           {manager && pendingCount > 0 && (
             <button
               onClick={() =>
                 setPanel((p) => (p === "approvals" ? "none" : "approvals"))
               }
-              className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100"
+              className={
+                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium " +
+                (panel === "approvals"
+                  ? "border-amber-400 bg-amber-100 text-amber-900"
+                  : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100")
+              }
             >
               <Inbox className="size-4" aria-hidden />
               {pendingCount} waiting for approval
@@ -146,7 +161,12 @@ export default function Agents() {
               setPanel((p) => (p === "connect" ? "none" : "connect"))
             }
             title="Connect Claude Desktop to this hotel with your own access"
-            className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+            className={
+              "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm " +
+              (panel === "connect"
+                ? "border-brand-400 bg-brand-50 text-brand-700"
+                : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700")
+            }
           >
             <Plug className="size-4" aria-hidden />
             Connect

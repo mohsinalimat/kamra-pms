@@ -204,6 +204,7 @@ export const venuesConfig: ScreenConfig = {
 
 export const venueBookingsConfig: ScreenConfig = {
   doctype: "Venue Booking",
+  dateFilter: { field: "event_date", label: "Event date" },
   title: "Events",
   description: "Banquet & event pipeline: enquiry → confirmed → completed.",
   searchFields: ["customer_name", "venue"],
@@ -359,6 +360,7 @@ export const housekeepingConfig: ScreenConfig = {
 
 export const billingConfig: ScreenConfig = {
   doctype: "Reservation",
+  dateFilter: { field: "check_in_date", label: "Check-in" },
   title: "Billing",
   description:
     "Reservation totals. Folios, charge posting and GST invoices arrive in the next milestone.",
@@ -387,6 +389,7 @@ export const billingConfig: ScreenConfig = {
 export const reservationsConfig: ScreenConfig = {
   doctype: "Reservation",
   title: "Reservations",
+  dateFilter: { field: "check_in_date", label: "Check-in" },
   description: "All bookings. Create new ones with the New booking button above.",
   propertyScoped: true,
   allowCreate: false,
@@ -429,6 +432,7 @@ export const reservationsConfig: ScreenConfig = {
 
 export const groupsConfig: ScreenConfig = {
   doctype: "Group Booking",
+  dateFilter: { field: "check_in_date", label: "Arrival" },
   title: "Groups & Blocks",
   description: "Group Rooms Control - blocks, pickup and rooming lists.",
   propertyScoped: true,

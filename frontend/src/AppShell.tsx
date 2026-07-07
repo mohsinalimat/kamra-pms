@@ -201,12 +201,12 @@ function SearchShortcut() {
   return (
     <button
       onClick={() => window.dispatchEvent(new Event("kamra:open-palette"))}
-      title={`Concierge: find a guest or booking, or jump anywhere - press ${isMac ? "\u2318 Command" : "Ctrl"} + K`}
+      title={`Search: find a guest or booking, or jump anywhere - press ${isMac ? "\u2318 Command" : "Ctrl"} + K`}
       aria-label="Open the Concierge (search and commands)"
       className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700"
     >
       <Search className="size-4" aria-hidden />
-      <span className="hidden md:inline">Concierge</span>
+      <span className="hidden md:inline">Search</span>
       <kbd className="hidden rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 md:inline">
         {combo}
       </kbd>
