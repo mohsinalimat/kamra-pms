@@ -1,0 +1,144 @@
+name: Nightly
+
+# The nightly channel: every night (03:00 IST), if develop moved in the last
+# 24h and its CI is green, refresh the rolling `nightly` prerelease, publish
+# ghcr.io/kamra-pms/kamra:nightly, and redeploy nightly.kamrapms.com.
+# workflow_dispatch forces a nightly regardless of the 24h check.
+
+on:
+  schedule:
+    - cron: "30 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  gate:
+    name: Anything new on develop?
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 50
+
+      - name: Check for fresh commits and green CI
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            FRESH=$(git log --since="24 hours ago" --oneline | wc -l)
+            if [ "$FRESH" -eq 0 ]; then
+              echo "No commits on develop in 24h - skipping nightly."
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Require the CI workflow to have succeeded for this exact SHA.
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "missing"')
+          echo "CI for $SHA: $CONCLUSION"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "CI not green for develop HEAD - refusing to ship a nightly."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+  docker:
+    name: Publish nightly image
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout frappe_docker
+        uses: actions/checkout@v4
+        with:
+          repository: frappe/frappe_docker
+
+      - name: Write apps.json
+        run: |
+          cat > apps.json <<EOF
+          [
+            {"url": "https://github.com/frappe/payments", "branch": "develop"},
+            {"url": "https://github.com/Kamra-PMS/kamra-pms", "branch": "develop"}
+          ]
+          EOF
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/layered/Containerfile
+          push: true
+          tags: ghcr.io/kamra-pms/kamra:nightly
+          build-args: |
+            FRAPPE_PATH=https://github.com/frappe/frappe
+            FRAPPE_BRANCH=version-16
+            CACHE_BUST=nightly-${{ needs.gate.outputs.sha }}
+          secret-files: |
+            apps_json=./apps.json
+
+  prerelease:
+    name: Refresh rolling nightly prerelease
+    needs: [gate, docker]
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Move the nightly tag and prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly \
+            --target "${{ needs.gate.outputs.sha }}" \
+            --prerelease \
+            --title "Nightly build" \
+            --notes "Rolling prerelease from \`develop\` @ ${{ needs.gate.outputs.sha }}. Try it at https://nightly.kamrapms.com or pull \`ghcr.io/kamra-pms/kamra:nightly\`."
+
+  deploy-nightly:
+    name: Deploy nightly.kamrapms.com
+    needs: [gate, docker]
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "Deploy secrets not configured - skipping nightly deploy."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
+            "bash ~/kamra-deploy/redeploy.sh nightly"

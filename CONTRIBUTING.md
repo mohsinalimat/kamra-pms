@@ -10,6 +10,17 @@ Follow the **Quickstart (development)** section in the README. In short:
 a Frappe bench, `bench get-app` this repo, `bench new-site` + `install-app`,
 and `npm run dev` in `frontend/` for the SPA.
 
+## Branches
+
+- **`develop`** — the integration branch and the *nightly* channel. All PRs
+  target `develop` (it's the default branch). nightly.kamrapms.com and the
+  `ghcr.io/kamra-pms/kamra:nightly` image are rebuilt from it every night.
+- **`main`** — the stable branch. Only release trains (maintainer merges of
+  `develop`) and hotfixes land here; the Frappe Cloud Marketplace listing and
+  demo.kamrapms.com track its releases.
+
+See [`RELEASING.md`](RELEASING.md) for the full release process.
+
 ## Before you open a PR
 
 - **Frontend:** `cd frontend && npm run build` must pass (typecheck + build).
@@ -32,8 +43,9 @@ chore: bump frontend deps
 BREAKING CHANGE: removes the `Foo` doctype; see CHANGELOG.
 ```
 
-This keeps `git log` readable and lets us automate changelog/version tooling
-later without re-deriving intent from prose commit messages.
+Commit messages aren't just style here: release automation
+([release-please](https://github.com/googleapis/release-please)) derives the
+next version number and the changelog draft from them.
 
 ## Versioning & releases
 
@@ -44,10 +56,12 @@ Kamra follows [Semantic Versioning](https://semver.org/):
 - **MINOR** — new features, additive/backward-compatible doctype changes.
 - **PATCH** — fixes with no migration impact.
 
-Every notable change is recorded in [`CHANGELOG.md`](CHANGELOG.md) under
-`[Unreleased]` as it lands; a release renames that section to the version
-being cut and tags `vX.Y.Z`. Pushing a `v*` tag triggers
-`.github/workflows/release.yml`, which publishes a GitHub Release.
+Releases are automated: merging a release train from `develop` into `main`
+makes release-please open (or update) a **Release PR** with the version bump
+and the [`CHANGELOG.md`](CHANGELOG.md) draft compiled from Conventional
+Commits; merging that PR tags `vX.Y.Z`, publishes the GitHub Release and the
+`ghcr.io/kamra-pms/kamra` Docker image, and redeploys demo.kamrapms.com.
+The full runbook lives in [`RELEASING.md`](RELEASING.md).
 
 If your change removes or renames anything a self-hoster might depend on
 (a doctype, a whitelisted method, a config key), call it out explicitly under
