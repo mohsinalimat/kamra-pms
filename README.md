@@ -3,8 +3,8 @@
 </p>
 
 <h1 align="center">Kamra PMS</h1>
-<p align="center"><b>The open-source, AI-native hotel PMS.</b><br/>
-Run your hotel with AI agents you control — on infrastructure you own.</p>
+<p align="center"><b>The open-source, agent-ready hotel PMS.</b><br/>
+Bring your own AI — Claude over MCP, or HeyKoala for voice/WhatsApp — on infrastructure you own.</p>
 
 <p align="center">
   <a href="https://demo.kamrapms.com"><b>▶ Live demo</b></a> ·
@@ -26,19 +26,19 @@ Hotels deserve better than:
 
 - **Per-room, per-module rent.** Your software bill grows every time your hotel does. Night audit is an add-on. Reports are an add-on. The booking engine is an add-on.
 - **Your data held hostage.** Guest history, rate history, your books — locked in a vendor's cloud, with an export fee if you ever try to leave.
-- **Waiting for AI that never ships.** Legacy vendors bolt a chatbot onto 2005-era software and call it innovation. Real agentic operations need a system *designed* for agents.
+- **Waiting for AI that never ships.** Legacy vendors bolt a chatbot onto 2005-era software and call it innovation. Real agentic operations need a system *designed* to be operated by AI, not just chatted at.
 - **Integration purgatory.** Every connection is a paid interface, a certification queue, a quarter of waiting.
 - **Trained-staff-only software.** If a new hire needs a week of training to check someone in, the software failed — not the hire.
 
-**Kamra is the answer we wanted to exist:** a full property management system where every operation — booking, check-in, folios, night audit, pricing — is a governed action an AI agent can perform, with the owner's guardrails enforced by the system, not by hope.
+**Kamra is the answer we wanted to exist:** a full property management system where every operation — booking, check-in, folios, night audit, pricing — is a governed action, exposed over a real tool layer, so *you* can bring the AI you trust to run it.
 
 ## What makes Kamra different
 
-- **AI & agent native, MCP-first.** Kamra ships an [MCP server](mcp/kamra_mcp.py) with 17+ tools. Connect Claude (or any MCP client) and say *"book Mr. Rao a deluxe for the weekend with breakfast"* — the agent quotes, books, and logs it. Agents are just users: role-scoped, permission-checked, fully audited.
-- **Bring your own key.** No bundled AI markup, no model lock-in. Point your own LLM at Kamra's tool surface.
+- **Agent-ready, not agent-locked.** Kamra ships an [MCP server](mcp/kamra_mcp.py) with governed tools, role-scoped and permission-checked like any user. Connect Claude (or any MCP client) and say *"book Mr. Rao a deluxe for the weekend with breakfast"* — it quotes, books, and every action is logged. No bundled agent personas to trust or configure — bring your own.
+- **Bring your own key.** No bundled AI markup, no model lock-in. Point your own LLM at Kamra's tool surface, or connect [HeyKoala](https://heykoala.ai) for a phone/WhatsApp AI concierge.
 - **Deterministic money.** Prices, taxes, availability come from a pricing engine — never from a language model. GST slabs, multi-rate invoices, and the no-overbooking guard are code, verified by an eval suite in CI.
-- **Autonomy with rails.** Owners set rate floors/ceilings and approval thresholds; agents literally cannot price outside them. Every automated action records the minutes it saved — ROI is a dashboard, not a promise.
-- **Truly free.** AGPL-licensed. No per-room pricing, no per-user seats, no license audits. Self-host on-prem or on any cloud.
+- **Full audit trail.** Every action — human or AI — is logged with who did it, what changed, and why. Accountability comes from the ledger, not from hoping the model behaves.
+- **Truly free.** AGPL-licensed. No per-room pricing, no per-user seats, no license audits, no "premium" tiers. Self-host on-prem or on any cloud.
 - **Built on Frappe.** The framework behind ERPNext — one of the world's largest open-source ERPs — with its mature ecosystem: RBAC, audit trails, multi-tenancy, the frappe/payments gateway app, and a huge developer community.
 
 ## See it
