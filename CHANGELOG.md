@@ -6,9 +6,16 @@ All notable changes to Kamra PMS are documented here. Format follows
 existing install on upgrade (removed doctypes, removed API endpoints),
 MINOR for new features, PATCH for fixes.
 
-## [Unreleased]
+## [2.0.0] - 2026-07-08
 
 ### Added
+- Booking Engine: a management app for the direct-booking page — hotel
+  profile with driving directions and an embedded map, a photo gallery,
+  house/pets/children/extra-bed policies, an FAQ list, and SEO fields (meta
+  title/description, OG image, page slug). The public booking page now
+  renders a gallery, a Policies & Rules card, a Location & Directions card,
+  and an FAQ accordion, and its `<title>`/meta description/OG image come from
+  the SEO fields when set.
 - Revenue Reports: budget vs. actual with attainment %, and a contribution
   analysis by source / company / travel agent.
 - Accounting export: download closed invoices as Tally, Zoho Books or ERPNext
