@@ -31,6 +31,9 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # develop is the repo's default branch; without this pin the action
+          # would try to cut releases from develop instead of main.
+          target-branch: main
 
   publish:
     needs: release-please
