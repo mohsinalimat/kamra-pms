@@ -87,7 +87,7 @@ Full docs live in [`docs/`](docs/):
 
 ```bash
 bench get-app payments
-bench get-app kamra https://github.com/Kamra-PMS/kamra-pms
+bench get-app kamra https://github.com/Kamra-PMS/kamra-pms --branch main
 bench --site your-site install-app kamra
 ```
 
@@ -97,6 +97,17 @@ Kamra ships its built front-end, so after install the product UI is live at
 `/app` as an admin escape hatch. A fresh install creates its own roles and
 permissions; sign in as your Administrator and open `/kamra/setup` to create
 your property, then add staff users.
+
+### Compatibility & channels
+
+| Kamra | Frappe | Channel |
+|---|---|---|
+| `main` releases (`vX.Y.Z`) | v16 | **stable** — Frappe Cloud Marketplace, `ghcr.io/kamra-pms/kamra:latest`, [demo.kamrapms.com](https://demo.kamrapms.com) |
+| `develop` | v16 | **nightly** — `ghcr.io/kamra-pms/kamra:nightly`, rebuilt every night |
+
+`develop` is the repo's default branch (for contributors), so production
+installs should keep the explicit `--branch main`. Releases follow
+[SemVer](https://semver.org/); see [`RELEASING.md`](RELEASING.md).
 
 ## Quickstart (development)
 
