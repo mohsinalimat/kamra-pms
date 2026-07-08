@@ -1797,9 +1797,16 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 	rooms = frappe.get_all(
 		"Room", filters={"property": property},
 		fields=["name", "room_number", "room_type", "housekeeping_status",
-		        "occupancy_status"],
+		        "occupancy_status", "floor"],
 		order_by="room_type asc, room_number asc",
 	)
+	# room-type labels (accordion headers show the name, not the Link id)
+	rt_names = {
+		rt.name: rt.room_type_name for rt in frappe.get_all(
+			"Room Type", filters={"property": property},
+			fields=["name", "room_type_name"])}
+	for r in rooms:
+		r["room_type_name"] = rt_names.get(r.room_type, r.room_type)
 	bookings = frappe.get_all(
 		"Reservation",
 		filters={
@@ -1807,12 +1814,19 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 			"status": ("in", ["Confirmed", "Checked In"]),
 			"check_in_date": ("<", end), "check_out_date": (">", start),
 		},
-		fields=["name", "room", "guest_name", "status", "check_in_date",
-		        "check_out_date", "is_day_use", "adults",
-		        "precheckin_status", "source"],
+		fields=["name", "room", "guest", "guest_name", "status",
+		        "check_in_date", "check_out_date", "is_day_use", "adults",
+		        "precheckin_status", "source", "booking_type", "company",
+		        "travel_agent", "group_booking"],
 	)
+	# VIP flag rides in from the guest profile (one lookup per distinct guest)
+	guests = {b.guest for b in bookings if b.guest}
+	vip = set(frappe.get_all(
+		"Guest", filters={"name": ("in", list(guests)), "vip": 1},
+		pluck="name")) if guests else set()
 	by_room = {}
 	for b in bookings:
+		b["vip"] = 1 if b.guest in vip else 0
 		by_room.setdefault(b.room, []).append(b)
 	for r in rooms:
 		r["bookings"] = by_room.get(r.name, [])

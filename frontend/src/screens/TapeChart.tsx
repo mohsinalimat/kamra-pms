@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import type { ShellContext } from "../AppShell"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight, Star } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
 import { listResource, serverError } from "../lib/resource"
 import { Badge } from "../components/ui/badge"
@@ -19,14 +19,38 @@ interface TapeBooking {
   check_in_date: string
   check_out_date: string
   is_day_use: 0 | 1
+  vip?: 0 | 1
+  source?: string
+  booking_type?: string
+  company?: string | null
+  travel_agent?: string | null
+  group_booking?: string | null
 }
 
 interface TapeRoom {
   name: string
   room_number: string
   room_type: string
+  room_type_name?: string
+  floor?: string | null
   housekeeping_status: string
   bookings: TapeBooking[]
+}
+
+/** Who is coming - a visible marker on the bar + a label for the tooltip. */
+function segment(b: TapeBooking): { label: string; dot: string; vip: boolean } {
+  if (b.vip) return { label: "VIP", dot: "bg-amber-300", vip: true }
+  if (b.booking_type === "Group" || b.group_booking)
+    return { label: "Group", dot: "bg-sky-200", vip: false }
+  if (b.booking_type === "Corporate" || b.company)
+    return { label: "Corporate", dot: "bg-violet-300", vip: false }
+  if (b.travel_agent)
+    return { label: "Travel agent", dot: "bg-teal-300", vip: false }
+  if (b.source === "OTA")
+    return { label: "OTA", dot: "bg-orange-300", vip: false }
+  if (b.source === "Walk-in")
+    return { label: "Walk-in", dot: "bg-zinc-300", vip: false }
+  return { label: b.source || "Direct", dot: "bg-white/70", vip: false }
 }
 
 interface TapeData {
@@ -54,8 +78,48 @@ export default function TapeChart() {
   const [draft, setDraft] = useState({ room: "", check_in: "", check_out: "" })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [rtFilter, setRtFilter] = useState("")
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("kamra:tape-collapsed") || "[]"))
+    } catch {
+      return new Set()
+    }
+  })
+  const toggleGroup = (name: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      localStorage.setItem("kamra:tape-collapsed", JSON.stringify([...next]))
+      return next
+    })
 
   const { refreshKey } = useOutletContext<ShellContext>()
+
+  // rooms grouped by room type, honoring the filter (rooms arrive ordered)
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; rooms: TapeRoom[] }[] = []
+    for (const r of data?.rooms ?? []) {
+      const label = r.room_type_name || r.room_type
+      if (rtFilter && label !== rtFilter) continue
+      let g = out.find((x) => x.label === label)
+      if (!g) {
+        g = { key: r.room_type, label, rooms: [] }
+        out.push(g)
+      }
+      g.rooms.push(r)
+    }
+    return out
+  }, [data, rtFilter])
+
+  const roomTypeNames = useMemo(
+    () =>
+      Array.from(
+        new Set((data?.rooms ?? []).map((r) => r.room_type_name || r.room_type)),
+      ),
+    [data],
+  )
 
   const load = useCallback(() => {
     call<TapeData>("kamra.api.tape_chart", {
@@ -97,6 +161,19 @@ export default function TapeChart() {
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-semibold">Tape chart</h1>
+        <select
+          className={cn(inputCls, "w-auto py-1.5")}
+          value={rtFilter}
+          onChange={(e) => setRtFilter(e.target.value)}
+          aria-label="Filter by room type"
+        >
+          <option value="">All room types</option>
+          {roomTypeNames.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
         <div className="ml-auto flex items-center gap-1">
           <Button variant="outline" aria-label="Previous week"
             onClick={() => setStart(shiftDate(start, -7))}>
@@ -130,51 +207,95 @@ export default function TapeChart() {
             })}
           </div>
 
-          {data?.rooms.map((room) => (
-            <div key={room.name} className="relative flex border-b border-zinc-100">
-              <div className="w-[130px] shrink-0 px-3 py-2.5">
-                <span className="text-sm font-semibold">{room.room_number}</span>
-                <span className={cn("ml-1.5 align-middle text-[9px] font-medium uppercase",
-                  room.housekeeping_status === "Dirty" ? "text-amber-600"
-                    : room.housekeeping_status === "Out of Order" ? "text-rose-600"
-                      : "text-zinc-400")}>
-                  {room.housekeeping_status}
-                </span>
-              </div>
-              {data.dates.map((d) => (
-                <div key={d} style={{ width: cellW }}
-                  className="shrink-0 border-l border-zinc-100" />
-              ))}
-              {/* booking bars */}
-              {room.bookings.map((b) => {
-                const s = Math.max(0,
-                  (new Date(b.check_in_date).getTime() - new Date(data.start).getTime()) / 86_400_000)
-                const rawEnd = (new Date(b.check_out_date).getTime() - new Date(data.start).getTime()) / 86_400_000
-                const e = Math.min(DAYS, b.is_day_use ? s + 1 : rawEnd)
-                if (e <= 0 || s >= DAYS) return null
-                return (
-                  <button key={b.name}
-                    onClick={() => openBooking(b)}
-                    style={{ left: 130 + s * cellW + 2, width: (e - s) * cellW - 4 }}
-                    className={cn(
-                      "absolute top-1.5 h-8 truncate rounded-md px-2 text-left text-xs font-medium text-white",
-                      b.status === "Checked In" ? "bg-brand-600 hover:bg-brand-700"
-                        : "bg-sky-500 hover:bg-sky-600",
-                    )}
-                    title={`${b.guest_name} · ${b.check_in_date} → ${b.check_out_date}`}>
-                    {b.guest_name}
+          {data &&
+            groups.map((g) => {
+              const isCollapsed = collapsed.has(g.label)
+              const booked = g.rooms.filter((r) => r.bookings.length > 0).length
+              return (
+                <div key={g.key}>
+                  <button
+                    onClick={() => toggleGroup(g.label)}
+                    style={{ minWidth: 130 + DAYS * cellW }}
+                    className="flex w-full items-center gap-2 border-b border-zinc-200 bg-zinc-50/80 px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 hover:bg-zinc-100"
+                  >
+                    <ChevronDown
+                      className={cn("size-3.5 transition-transform", isCollapsed && "-rotate-90")}
+                      aria-hidden
+                    />
+                    {g.label}
+                    <span className="font-normal normal-case tracking-normal text-zinc-400">
+                      {g.rooms.length} rooms · {booked} in use
+                    </span>
                   </button>
-                )
-              })}
-            </div>
-          ))}
+                  {!isCollapsed &&
+                    g.rooms.map((room) => (
+                      <div key={room.name} className="relative flex border-b border-zinc-100">
+                        <div className="w-[130px] shrink-0 px-3 py-2.5">
+                          <span className="text-sm font-semibold">{room.room_number}</span>
+                          <span className={cn("ml-1.5 align-middle text-[9px] font-medium uppercase",
+                            room.housekeeping_status === "Dirty" ? "text-amber-600"
+                              : room.housekeeping_status === "Out of Order" ? "text-rose-600"
+                                : "text-zinc-400")}>
+                            {room.housekeeping_status}
+                          </span>
+                        </div>
+                        {data.dates.map((d) => (
+                          <div key={d} style={{ width: cellW }}
+                            className="shrink-0 border-l border-zinc-100" />
+                        ))}
+                        {/* booking bars */}
+                        {room.bookings.map((b) => {
+                          const s = Math.max(0,
+                            (new Date(b.check_in_date).getTime() - new Date(data.start).getTime()) / 86_400_000)
+                          const rawEnd = (new Date(b.check_out_date).getTime() - new Date(data.start).getTime()) / 86_400_000
+                          const e = Math.min(DAYS, b.is_day_use ? s + 1 : rawEnd)
+                          if (e <= 0 || s >= DAYS) return null
+                          const seg = segment(b)
+                          return (
+                            <button key={b.name}
+                              onClick={() => openBooking(b)}
+                              style={{ left: 130 + s * cellW + 2, width: (e - s) * cellW - 4 }}
+                              className={cn(
+                                "absolute top-1.5 flex h-8 items-center gap-1 truncate rounded-md px-1.5 text-left text-xs font-medium text-white",
+                                b.status === "Checked In" ? "bg-brand-600 hover:bg-brand-700"
+                                  : "bg-sky-500 hover:bg-sky-600",
+                              )}
+                              title={`${b.guest_name} · ${seg.label} · ${b.check_in_date} → ${b.check_out_date}`}>
+                              {seg.vip ? (
+                                <Star className="size-3 shrink-0 fill-amber-300 text-amber-300" aria-hidden />
+                              ) : (
+                                <span className={cn("size-2 shrink-0 rounded-full", seg.dot)} aria-hidden />
+                              )}
+                              <span className="truncate">{b.guest_name}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ))}
+                </div>
+              )
+            })}
         </div>
       </div>
-      <p className="mt-2 flex gap-3 text-xs text-zinc-400">
-        <Badge tone="sky">Confirmed</Badge>
-        <Badge tone="brand">Checked in</Badge>
-        Click a bar to move rooms or change dates.
-      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
+        <span className="flex items-center gap-1.5">
+          <Badge tone="sky">Confirmed</Badge>
+          <Badge tone="brand">Checked in</Badge>
+        </span>
+        <span className="flex items-center gap-1">
+          <Star className="size-3 fill-amber-400 text-amber-400" /> VIP
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="size-2 rounded-full bg-violet-400" /> Corporate
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="size-2 rounded-full bg-sky-300" /> Group
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="size-2 rounded-full bg-orange-400" /> OTA
+        </span>
+        <span>Click a bar to move rooms or change dates.</span>
+      </div>
 
       {sel && (
         <Sheet
