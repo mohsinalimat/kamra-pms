@@ -280,7 +280,7 @@ export default function Assistant() {
           <Sparkles className="size-4 text-brand-600" />
           <span className="text-sm font-semibold">Copilot</span>
           <span className="text-[10px] uppercase tracking-wider text-zinc-400">
-            your AI front desk · acts on{" "}
+            your AI, acting as you · on{" "}
             {getCurrentProperty()?.split("-")[0] ?? "your hotel"}
           </span>
         </div>

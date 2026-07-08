@@ -1,9 +1,9 @@
 /*  Command palette (⌘K / Ctrl+K).
 
-    The humans' agent surface - Opera's "I Want To…" menu, reimagined as a
-    fuzzy typeable overlay that dispatches through the same autonomy gate
-    as the AI agents. Nav shortcuts on a cold prompt; guest / reservation
-    search once you start typing; a couple of high-value quick actions.
+    A fast "jump to anything" surface - Opera's "I Want To…" menu, reimagined
+    as a fuzzy typeable overlay. Nav shortcuts on a cold prompt; guest /
+    reservation search once you start typing; a couple of high-value quick
+    actions. Every action it triggers is recorded in the Activity Log.
 */
 
 import {
@@ -65,7 +65,7 @@ interface Result {
 
 const NAV_COMMANDS: NavCmd[] = [
   { kind: "nav", id: "nav:today", label: "Go to Today", hint: "arrivals, departures, room board", path: "/", icon: Home },
-  { kind: "nav", id: "nav:copilot", label: "Open Copilot", hint: "chat with NOVA · AI staff · approvals · activity", path: "/assistant", icon: Sparkles },
+  { kind: "nav", id: "nav:copilot", label: "Open Copilot", hint: "chat with your AI over the hotel's tools", path: "/assistant", icon: Sparkles },
   { kind: "nav", id: "nav:reservations", label: "Go to Reservations", hint: "search & manage bookings", path: "/reservations", icon: ClipboardList },
   { kind: "nav", id: "nav:tape", label: "Go to Tape Chart", hint: "rooms × dates grid", path: "/tape", icon: LayoutGrid },
   { kind: "nav", id: "nav:calendar", label: "Go to Calendar", hint: "availability by room type", path: "/calendar", icon: CalendarDays },
@@ -322,7 +322,7 @@ export function CommandPalette() {
             <kbd className="rounded bg-white px-1 font-mono">K</kbd>
             to open · <kbd className="rounded bg-white px-1 font-mono">esc</kbd> to close
           </span>
-          <span>Actions log to the Agents Timeline.</span>
+          <span>Every action is recorded in the Activity Log.</span>
         </div>
       </div>
     </div>

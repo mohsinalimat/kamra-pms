@@ -781,12 +781,12 @@ export function ActivityTab({ property }: { property: string }) {
           aria-label="Filter by who acted"
         >
           <option value="">Everyone</option>
-          <option value="human">Humans only</option>
-          <option value="agent">AI staff only</option>
+          <option value="human">People only</option>
+          <option value="agent">AI only</option>
         </select>
         <p className="text-xs text-zinc-400">
-          Every action on the property, newest first - who did it, what, and
-          who approved it.
+          Every action on the property, newest first - who did it and what
+          changed.
         </p>
       </div>
 
