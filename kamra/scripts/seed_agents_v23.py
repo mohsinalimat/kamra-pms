@@ -284,19 +284,13 @@ def _replace_autonomy(doc, rules: list[tuple]) -> None:
 
 
 def execute(property_name: str | None = None) -> dict:
-	"""Seed the three defaults for every enabled property (or one, if named)."""
-	if property_name:
-		properties: list[str | None] = [property_name]
-	else:
-		rows = frappe.get_all("Property", filters={"disabled": 0}, pluck="name") or []
-		properties = list(rows) or [None]
-
-	created = []
-	for prop in properties:
-		created.append(_wire_front_desk(prop))
-		created.append(_wire_night_auditor(prop))
-		created.append(_wire_owner_digest(prop))
-		created.append(_wire_allocation(prop))
-		created.append(_wire_prearrival(prop))
+	"""Kamra no longer ships native agents. It is agent-READY: governed tools +
+	MCP + role scoping + an audit log. The intelligence is brought in - your own
+	Claude via MCP, or HeyKoala for voice/WhatsApp. This seeder now removes any
+	previously-seeded agents instead of creating them."""
+	removed = frappe.get_all("Agent", pluck="name")
+	for name in removed:
+		frappe.delete_doc("Agent", name, force=True, ignore_permissions=True)
 	frappe.db.commit()
-	return {"seeded": len(created), "agents": created}
+	return {"seeded": 0, "removed": len(removed),
+	        "note": "Kamra is agent-ready; native agents removed."}

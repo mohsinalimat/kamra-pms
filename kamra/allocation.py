@@ -164,67 +164,27 @@ def suggest_allocation(property: str, date: str | None = None):
 
 @frappe.whitelist(methods=["POST"])
 @require_roles("Front Desk", "Revenue Manager", "Kamra Agent")
-def apply_allocation(property: str, assignments, agent: str | None = None):
-	"""Assign the proposed rooms. Each assignment flows through the autonomy
-	gate: a human runs on their own authority (executes); an agent runs under
-	its rules (obvious ones execute, judgement calls park in Approvals)."""
-	from kamra.autonomy import guard, finalize_after, GateExecute, GateSuggest
-
+def apply_allocation(property: str, assignments):
+	"""Assign the proposed rooms - run by a person from the tape chart, on their
+	own authority. Each assignment is recorded in the action log."""
 	if isinstance(assignments, str):
 		assignments = frappe.parse_json(assignments)
 
-	executed, pending = [], []
+	from kamra.savings import log_action
+	executed = []
 	for a in assignments:
 		res, room = a.get("reservation"), a.get("room") or a.get("suggested_room")
 		if not (res and room):
 			continue
-		doc = frappe.db.get_value("Reservation", res,
-		                          ["guest_name", "room", "status"], as_dict=True)
+		doc = frappe.db.get_value("Reservation", res, ["room", "status"],
+		                          as_dict=True)
 		if not doc or doc.status not in ("Confirmed", "Checked In"):
 			continue
-		summary = (f"Assign {doc.guest_name} to "
-		           f"room {frappe.db.get_value('Room', room, 'room_number')}")
-		decision = guard(
-			"allocate_room", endpoint="kamra.allocation.apply_allocation",
-			payload={"property": property, "assignments": [a],
-			         "needs_review": a.get("needs_review", 1)},
-			summary=summary, agent_name=agent, property=property,
-			reference_doctype="Reservation", reference_name=res,
-			before_snapshot={"room": doc.room}, minutes_saved=2,
-			rationale=a.get("why") or "")
-		if isinstance(decision, GateExecute):
-			frappe.db.set_value("Reservation", res, "room", room)
-			from kamra.savings import log_action
-			log_action("allocate_room", "Reservation", res, property,
-			           rationale=f"→ room {room}. {a.get('why') or ''}".strip(),
-			           agent_name=agent)
-			finalize_after(decision.log_name, after_snapshot={"room": room})
-			executed.append({"reservation": res, "room": room})
-		elif isinstance(decision, GateSuggest):
-			pending.append({"reservation": res, "gate": "suggest",
-			                "summary": decision.summary})
-		else:  # GatePending
-			pending.append({"reservation": res, "gate": "pending",
-			                "summary": summary})
+		frappe.db.set_value("Reservation", res, "room", room)
+		log_action("allocate_room", "Reservation", res, property,
+		           minutes_saved=2,
+		           rationale=f"→ room {room}. {a.get('why') or ''}".strip())
+		executed.append({"reservation": res, "room": room})
 
 	frappe.db.commit()
-	return {"executed": executed, "pending": pending}
-
-
-def run_nightly_allocation():
-	"""ORION's scheduled pass: pre-assign tomorrow's arrivals for every active
-	property. Obvious placements execute; anything ORION should not decide alone
-	(a real choice, a VIP, a preference match) parks in Approvals for the desk.
-	Wired to the scheduler, so the board is already sorted before the team
-	arrives."""
-	from frappe.utils import add_days, nowdate
-
-	tomorrow = add_days(nowdate(), 1)
-	for prop in frappe.get_all("Property", filters={"disabled": 0}, pluck="name"):
-		try:
-			sug = suggest_allocation(prop, tomorrow)
-			if sug["proposals"]:
-				apply_allocation(prop, sug["proposals"], agent="ORION")
-		except Exception:
-			frappe.log_error(f"ORION allocation failed for {prop}",
-			                 "Allocation agent")
+	return {"executed": executed}

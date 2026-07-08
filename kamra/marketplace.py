@@ -55,23 +55,22 @@ def registry(property: str):
 			],
 		},
 		{
-			"category": "Channels",
-			"blurb": "Let guests reach you on voice and WhatsApp - answered by "
-			         "your AI, logged like any staff action.",
+			"category": "AI on your phone lines (HeyKoala)",
+			"blurb": "Kamra is agent-ready. HeyKoala is the AI that answers your "
+			         "phone and WhatsApp - it books, quotes and handles requests "
+			         "24x7 using Kamra's governed tools, and every action is "
+			         "logged. Connect a number to switch it on.",
 			"cards": [
 				_connector("HeyKoala Voice AI", "heykoala",
-				           "A phone number your AI concierge answers - books, "
-				           "quotes, answers, 24x7.",
+				           "A phone number HeyKoala's AI concierge answers - "
+				           "books, quotes and answers, 24x7.",
 				           action="heykoala", channel="Voice",
 				           **_channel_status(property, "HeyKoala", "Voice")),
 				_connector("HeyKoala WhatsApp", "heykoala",
-				           "A WhatsApp concierge for confirmations, pre-arrival "
-				           "check-in and requests.",
+				           "A WhatsApp number the AI answers - confirmations, "
+				           "pre-arrival check-in and guest requests.",
 				           action="heykoala", channel="WhatsApp",
 				           **_channel_status(property, "HeyKoala", "WhatsApp")),
-				_connector("Twilio / Meta Business", "twilio",
-				           "Bring your own telephony or WhatsApp Business.",
-				           status="planned"),
 			],
 		},
 		{
@@ -86,17 +85,20 @@ def registry(property: str):
 			],
 		},
 		{
-			"category": "AI",
-			"blurb": "Bring your own model, or your own Claude.",
+			"category": "Bring your own AI",
+			"blurb": "Kamra ships the governed tools + MCP; you bring the "
+			         "intelligence. Connect your own Claude (it acts as you, "
+			         "scoped to your role), or power the in-app Copilot chat "
+			         "with your OpenAI key.",
 			"cards": [
-				_connector("Claude Desktop", "claude",
-				           "Connect Claude to this hotel with your own access - "
-				           "it acts as you.",
+				_connector("Connect Claude (MCP)", "claude",
+				           "Point your Claude at this hotel over MCP - it can "
+				           "use the tools your role allows, and nothing more.",
 				           action="route", route="/assistant",
 				           status="connected" if has_key else "available",
 				           detail="Your connector" if has_key else None),
 				_connector("OpenAI key", "openai",
-				           "Power NOVA with your own OpenAI key.",
+				           "Power the in-app Copilot chat with your own key.",
 				           action="route", route="/settings",
 				           status="connected" if ai else "configure"),
 			],

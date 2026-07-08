@@ -414,7 +414,7 @@ export default function TapeChart() {
       {alloc && (
         <Sheet
           title="Auto-assign arrivals"
-          description={`ORION's room plan for ${alloc.date}`}
+          description={`Suggested room plan for ${alloc.date}`}
           onClose={() => setAlloc(null)}
           footer={
             <div className="flex justify-end gap-2">
@@ -465,8 +465,8 @@ export default function TapeChart() {
               </div>
             ))}
             <p className="text-xs text-zinc-400">
-              Assigning here places the rooms now. Overnight, ORION runs this for
-              the next day and routes the judgement calls to Approvals.
+              Rooms are matched to each guest's type and preferences. Assigning
+              places them now; "Review" flags a choice worth a second look.
             </p>
           </div>
         </Sheet>

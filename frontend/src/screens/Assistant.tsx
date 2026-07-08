@@ -44,7 +44,7 @@ const SUGGESTIONS = [
 function ThinkingDots() {
   return (
     <span className="inline-flex items-center gap-1.5 text-sm text-zinc-500">
-      NOVA is thinking
+      Thinking
       <span className="inline-flex gap-0.5">
         <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:0ms]" />
         <span className="size-1.5 animate-bounce rounded-full bg-zinc-400 [animation-delay:150ms]" />
@@ -57,7 +57,7 @@ function ThinkingDots() {
 function AiSetupNotice() {
   return (
     <div className="mx-auto max-w-lg space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-      <p className="font-semibold">NOVA needs an AI key to start working.</p>
+      <p className="font-semibold">Copilot needs an AI key to start working.</p>
       <ol className="list-decimal space-y-1 pl-5">
         <li>
           Get an OpenAI API key at{" "}
@@ -75,7 +75,7 @@ function AiSetupNotice() {
           In Kamra, open <b>Settings, AI assistant</b>: paste the key, pick a
           model (gpt-4o-mini works well), switch it on, save.
         </li>
-        <li>Come back here and give NOVA a task.</li>
+        <li>Come back here and ask a question.</li>
       </ol>
       <p className="text-xs text-amber-700">
         The key stays on your server and is stored masked. Usage is billed to
@@ -278,7 +278,7 @@ export default function Assistant() {
       <div className="flex min-w-0 flex-1 flex-col rounded-xl border border-zinc-200 bg-white">
         <div className="flex items-center gap-2 border-b border-zinc-100 px-4 py-3">
           <Sparkles className="size-4 text-brand-600" />
-          <span className="text-sm font-semibold">NOVA</span>
+          <span className="text-sm font-semibold">Copilot</span>
           <span className="text-[10px] uppercase tracking-wider text-zinc-400">
             your AI front desk · acts on{" "}
             {getCurrentProperty()?.split("-")[0] ?? "your hotel"}
@@ -295,7 +295,7 @@ export default function Assistant() {
             <div className="mx-auto max-w-xl space-y-3 py-8 text-center">
               <Sparkles className="mx-auto size-8 text-brand-500" />
               <h2 className="text-lg font-semibold">
-                NOVA - your AI front desk
+                Your AI, acting as you
               </h2>
               <p className="text-sm text-zinc-500">
                 It can look things up and act - quote and book stays, check
@@ -386,7 +386,7 @@ export default function Assistant() {
           <div className="flex items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-4 py-1.5 shadow-sm transition focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
             <input
               className="flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-zinc-400"
-              placeholder="Ask NOVA anything about the hotel…"
+              placeholder="Ask anything about the hotel…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={busy}

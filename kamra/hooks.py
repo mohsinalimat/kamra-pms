@@ -28,18 +28,12 @@ add_to_apps_screen = [
 # Automated end-of-day: post room charges, flag no-shows, per property.
 scheduler_events = {
 	"cron": {
-		# 03:00 site time, daily
+		# 03:00 site time, daily - the night audit closes the day
 		"0 3 * * *": ["kamra.folio.nightly_audit_all_properties"],
-		# 03:30 - ORION pre-assigns tomorrow's arrivals (after the night audit)
-		"30 3 * * *": ["kamra.allocation.run_nightly_allocation"],
-		# 09:00 - MAYA sends self check-in links to upcoming arrivals
+		# 09:00 - send self check-in links to upcoming arrivals, for properties
+		# that turned the setting on (a plain automation, not an agent)
 		"0 9 * * *": ["kamra.prearrival.run_prearrival_outreach"],
 	},
-	"hourly": [
-		# Expire Pending Agent Actions past their TTL so they don't linger in the
-		# Inbox forever (default TTL is 72h; set on Pending Agent Action.before_insert).
-		"kamra.autonomy.expire_stale_pending",
-	],
 }
 
 # Apps

@@ -13,7 +13,6 @@ import {
   Sparkles,
 } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
-import { useAuth } from "../lib/auth"
 import Assistant from "./Assistant"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
@@ -106,19 +105,7 @@ const statusTone: Record<string, "zinc" | "sky" | "amber" | "rose" | "green"> = 
 
 export default function Agents() {
   const property = getCurrentProperty()
-  const { roles } = useAuth()
-  const manager = ["Hotel Admin", "System Manager", "Administrator"].some(
-    (r) => roles.includes(r),
-  )
-  const [pendingCount, setPendingCount] = useState(0)
-  const [panel, setPanel] = useState<"none" | "approvals" | "connect">("none")
-
-  useEffect(() => {
-    if (!manager) return
-    call<unknown[]>("kamra.agents_api.pending_actions", { property })
-      .then((r) => setPendingCount(Array.isArray(r) ? r.length : 0))
-      .catch(() => setPendingCount(0))
-  }, [property, manager])
+  const [panel, setPanel] = useState<"none" | "connect">("none")
 
   return (
     <div className="space-y-4">
@@ -128,7 +115,7 @@ export default function Agents() {
           <h1 className="text-xl font-semibold tracking-tight">Copilot</h1>
         </div>
         <p className="text-sm text-zinc-500">
-          NOVA, your AI front desk. Ask, and it does.
+          Chat with your PMS using your own AI key - it acts as you.
         </p>
         <div className="ml-auto flex items-center gap-2">
           {panel !== "none" && (
@@ -140,27 +127,11 @@ export default function Agents() {
               Back to chat
             </button>
           )}
-          {manager && pendingCount > 0 && (
-            <button
-              onClick={() =>
-                setPanel((p) => (p === "approvals" ? "none" : "approvals"))
-              }
-              className={
-                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium " +
-                (panel === "approvals"
-                  ? "border-amber-400 bg-amber-100 text-amber-900"
-                  : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100")
-              }
-            >
-              <Inbox className="size-4" aria-hidden />
-              {pendingCount} waiting for approval
-            </button>
-          )}
           <button
             onClick={() =>
               setPanel((p) => (p === "connect" ? "none" : "connect"))
             }
-            title="Connect Claude Desktop to this hotel with your own access"
+            title="Connect your own Claude to this hotel over MCP - scoped to your role"
             className={
               "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm " +
               (panel === "connect"
@@ -169,12 +140,11 @@ export default function Agents() {
             }
           >
             <Plug className="size-4" aria-hidden />
-            Connect
+            Connect your AI
           </button>
         </div>
       </header>
 
-      {panel === "approvals" && manager && <InboxTab property={property} />}
       {panel === "connect" && <ConnectTab property={property} />}
       {panel === "none" && <Assistant />}
     </div>
