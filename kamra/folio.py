@@ -534,6 +534,31 @@ def post_allowance(folio_name: str, amount: float, reason: str,
 	return folio.name
 
 
+def void_charge(folio_name: str, charge_row: str, reason: str = "") -> dict:
+	"""Remove a wrong charge line from an OPEN folio - the correction path for
+	a mis-posted bill (wrong amount, duplicate, wrong guest). The folio must
+	still be open; once it is invoiced, use an allowance instead so the ledger
+	stays honest. Every void is logged with who and why."""
+	folio = frappe.get_doc("Folio", folio_name)
+	if folio.status == "Closed":
+		frappe.throw("This folio is settled - post an allowance to reverse a "
+		             "charge, or cancel the invoice first.")
+	row = next((c for c in folio.charges if c.name == charge_row), None)
+	if not row:
+		frappe.throw("That charge line is not on this folio.")
+	removed = {"charge_type": row.charge_type, "description": row.description,
+	           "amount": row.amount}
+	folio.remove(row)
+	_recalculate(folio)
+	folio.save(ignore_permissions=True)
+	from kamra.savings import log_action
+	log_action("void_charge", "Folio", folio.name, folio.property,
+	           rationale=f"Removed {removed['charge_type']} "
+	                     f"{removed['description']} ₹{removed['amount']}"
+	                     + (f" - {reason}" if reason else ""))
+	return {"folio": folio.name, "removed": removed, "balance": folio.balance}
+
+
 def part_settle(folio_name: str) -> dict:
 	"""Interim invoice mid-stay: freeze the fully-paid folio with a real
 	invoice number and open a fresh one so the stay keeps running - the

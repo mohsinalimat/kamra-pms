@@ -24,6 +24,19 @@ payments, preview and process cancellations.
 
 Rules:
 - Numbers come from tools, never from you. Always quote before booking.
+- NEVER claim you did something unless a tool call returned success for it.
+  If you have no tool for a request, say so plainly and stop - do not
+  pretend, and do not substitute an unrelated tool. (There is no way to
+  "inform housekeeping" except raise_ticket; occupant/room tools are not it.)
+- Do each action ONCE. Never call the same posting/charge/payment tool twice
+  for a single request - one dinner bill is one post_charge, not two.
+- Posting a charge: do NOT set gst_rate yourself - the system applies the
+  right tax (food & beverage is taxed at the F&B rate, not 18%). For an
+  itemised bill (e.g. a dinner), ask what was ordered / the total before
+  posting if it isn't already clear.
+- To remove or fix a wrong charge: get_folio to see the charge lines, then
+  void_charge with that line's `name` on an open folio (use apply_allowance
+  once a folio is invoiced). Do not "offset with a zero charge" or move it.
 - A room number (e.g. 101) is NOT a reservation id (e.g. RES-2026-00021).
   To act on a guest, first find the reservation with find_reservations (by
   guest name, room number, or status), then use its `name` as the reservation
@@ -33,8 +46,8 @@ Rules:
   No Show). front_desk_today is only *today's* board.
 - Never say you can't find something before calling find_reservations.
 - Before cancelling, run the cancellation preview and state the fee.
-- Confirm irreversible actions (cancel, checkout with balance) in one
-  short question before calling the tool.
+- Confirm irreversible actions (cancel, checkout with balance, voiding a
+  charge) in one short question before calling the tool.
 - Be brief and concrete - front desk answers, not essays. Amounts in ₹.
 {extra}"""
 
@@ -77,6 +90,31 @@ EXTRA_TOOLS = {
 		{"reservation": {"type": "string"},
 		 "occupants": {"type": "array", "items": {"type": "object"}}},
 		False, True),
+	"void_charge": (
+		"void_folio_charge",
+		"Remove a WRONG charge line from an open folio (duplicate, wrong "
+		"amount, wrong guest). Pass the folio and the charge line's id (the "
+		"`name` field of the charge row from get_folio). For a settled/invoiced "
+		"folio use apply_allowance instead.",
+		{"folio": {"type": "string"}, "charge_row": {"type": "string"},
+		 "reason": {"type": "string"}}, False, True),
+	"apply_allowance": (
+		"post_allowance",
+		"Credit back part of a bill on an open folio without deleting the "
+		"original line (service recovery, dispute, agreed discount). Needs a "
+		"reason; it goes on the record.",
+		{"folio": {"type": "string"}, "amount": {"type": "number"},
+		 "reason": {"type": "string"}}, False, True),
+	"raise_ticket": (
+		"create_ticket",
+		"Log a guest request or an operational issue as a ticket for the right "
+		"team - e.g. a housekeeping issue (water spill, extra towels), "
+		"maintenance, or a guest complaint. This is the ONLY way to notify "
+		"housekeeping/maintenance; there is no other channel.",
+		{"subject": {"type": "string"}, "category": {"type": "string"},
+		 "priority": {"type": "string"}, "room": {"type": "string"},
+		 "reservation": {"type": "string"}, "description": {"type": "string"}},
+		True, True),
 	"set_room_rate": (
 		"set_room_rate",
 		"Set a nightly rate for a room type over dates. Owner guardrails apply - give a reason.",

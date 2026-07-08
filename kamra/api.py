@@ -674,6 +674,37 @@ def add_folio_payment(folio: str, mode: str, amount: float,
 	return doc.as_dict()
 
 
+_FNB_WORDS = ("food", "dinner", "lunch", "breakfast", "meal", "restaurant",
+              "f&b", "fnb", "beverage", "snack", "room service", "cafe",
+              "kitchen", "buffet", "minibar", "mini bar")
+
+
+def _resolve_charge_gst(property: str, charge_type: str, description: str,
+                        is_alcohol: int, provided: float) -> float:
+	"""The tax rate a charge actually carries, decided server-side so a caller
+	(human or agent) cannot mis-tax it. Food & beverage uses the F&B rate from
+	the localization pack; alcohol its own rate; otherwise the given rate."""
+	text = f"{charge_type} {description}".lower()
+	if is_alcohol:
+		return float(provided) if provided else 18.0
+	if any(w in text for w in _FNB_WORDS):
+		from kamra.folio import _fnb_gst
+		return float(_fnb_gst(property))
+	return float(provided or 0)
+
+
+@frappe.whitelist()
+@require_roles("Finance", "Front Desk", "Kamra Agent")
+def void_folio_charge(folio: str, charge_row: str, reason: str = "",
+                      pin: str | None = None):
+	"""Remove a wrong charge line from an open folio (the bill-correction
+	path). PIN-guarded like other money actions for humans; agents are
+	accountable through the action log."""
+	_pin_guard(folio, pin)
+	from kamra.folio import void_charge
+	return void_charge(folio, charge_row, reason)
+
+
 @frappe.whitelist()
 @require_roles("Finance", "Front Desk", "Kamra Agent")
 def post_stay_charge(reservation: str, charge_type: str, description: str,
@@ -686,6 +717,10 @@ def post_stay_charge(reservation: str, charge_type: str, description: str,
 		frappe.throw("Reservation is not active.")
 	from kamra.folio import target_folio
 	is_alcohol = 1 if int(is_alcohol or 0) else 0
+	# GST is decided by the hotel's tax rules, not by the caller's guess:
+	# food & beverage carries the F&B rate (5% in India), not 12/18.
+	gst_rate = _resolve_charge_gst(res.property, charge_type, description,
+	                               is_alcohol, gst_rate)
 	folio_name = target_folio(res, charge_type, is_alcohol)
 	out = add_folio_charge(folio_name, charge_type, description, amount,
 	                       gst_rate, is_alcohol=is_alcohol,
