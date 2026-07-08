@@ -110,8 +110,8 @@ export default function Marketplace() {
         <Store className="size-5 text-brand-600" aria-hidden />
         <h1 className="text-xl font-semibold tracking-tight">Marketplace</h1>
         <p className="ml-2 text-sm text-zinc-500">
-          Your plan, plus the channels, payments, accounting and country packs
-          you can plug in.
+          Every app included, plus the AI, channels, payments, accounting and
+          country packs you can plug in.
         </p>
       </header>
 
