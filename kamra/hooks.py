@@ -141,7 +141,7 @@ website_redirects = [
 # ------------
 
 # before_install = "kamra.install.before_install"
-# after_install = "kamra.install.after_install"
+after_install = "kamra.install.after_install"
 
 # Uninstallation
 # ------------
