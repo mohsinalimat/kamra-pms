@@ -560,6 +560,29 @@ def t21():
 		pass
 
 
+@check("housekeeping assignment: assign, decline back to pool, claim")
+def t22():
+	from kamra import api
+	task = frappe.get_doc({
+		"doctype": "Housekeeping Task", "property": P, "room": ROOM,
+		"task_type": "Checkout Clean", "priority": "High", "status": "Pending",
+	}).insert(ignore_permissions=True).name
+	api.hk_assign_task(task, "Administrator")
+	d = frappe.get_doc("Housekeeping Task", task)
+	assert d.assignment_status == "Assigned" and d.assigned_to_user, d.assignment_status
+	api.hk_reject_task(task, "on break")
+	d.reload()
+	assert d.assignment_status == "Unassigned" and not d.assigned_to_user, "reject didn't free it"
+	assert d.reject_reason, "reject reason not recorded"
+	api.hk_claim_task(task)
+	d.reload()
+	assert d.assignment_status == "Accepted" and d.assigned_to_user, "claim failed"
+	# the queue splits mine vs claimable and carries the flags
+	q = api.hk_queue(P)
+	row = next(t for t in q["tasks"] if t["name"] == task)
+	assert row["mine"] and not row["claimable"], (row["mine"], row["claimable"])
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -582,7 +605,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { BedDouble, LogOut, Plane, RefreshCw } from "lucide-react"
+import { BedDouble, LogOut, Plane, RefreshCw, Star, Clock } from "lucide-react"
 import {
   call,
   getCurrentProperty,
@@ -23,6 +23,13 @@ interface HkTask {
   status: "Pending" | "In Progress"
   notes: string | null
   arrival_today: boolean
+  assigned_to_user: string | null
+  assignment_status: "Unassigned" | "Assigned" | "Accepted"
+  mine: boolean
+  claimable: boolean
+  vip: number
+  special_requests: string | null
+  eta: string | null
 }
 
 interface HkRoom {
@@ -31,6 +38,12 @@ interface HkRoom {
   housekeeping_status: "Clean" | "Dirty" | "Inspected" | "Out of Order"
   occupancy_status: "Vacant" | "Occupied"
   arrival_today: boolean
+  vip?: number
+  in_house_guest?: string
+  arriving_guest?: string
+  special_requests?: string
+  eta?: string
+  departure_today?: number
 }
 
 const hkTone: Record<HkRoom["housekeeping_status"], string> = {
@@ -44,7 +57,9 @@ export default function HkApp() {
   const [auth, setAuth] = useState<"loading" | "anon" | "ok">("loading")
   const [data, setData] = useState<{ tasks: HkTask[]; rooms: HkRoom[] } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [view, setView] = useState<"queue" | "rooms">("queue")
+  const [view, setView] = useState<"mine" | "pool" | "rooms">("mine")
+  const [rejecting, setRejecting] = useState<string | null>(null)
+  const [reason, setReason] = useState("")
 
   const checkAuth = () =>
     whoami()
@@ -68,10 +83,10 @@ export default function HkApp() {
     return () => clearInterval(t)
   }, [auth, load])
 
-  async function update(task: string, status: string) {
+  async function run(task: string, method: string, params: Record<string, unknown> = {}) {
     setBusy(task)
     try {
-      await call("kamra.api.hk_update_task", { task, status })
+      await call(method, { task, ...params })
       load()
     } finally {
       setBusy(null)
@@ -81,6 +96,129 @@ export default function HkApp() {
   if (auth === "loading")
     return <p className="py-20 text-center text-zinc-400">Loading…</p>
   if (auth === "anon") return <Login onSuccess={checkAuth} />
+
+  const mine = (data?.tasks ?? []).filter((t) => t.mine)
+  const pool = (data?.tasks ?? []).filter((t) => t.claimable)
+
+  const TaskCard = ({ t }: { t: HkTask }) => (
+    <li className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className="text-3xl font-bold tabular-nums">{t.room_number}</span>
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 font-medium">
+            {t.vip ? (
+              <Star className="size-4 shrink-0 fill-amber-400 text-amber-400" aria-label="VIP" />
+            ) : null}
+            {t.task_type}
+          </p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            <Badge tone={t.priority === "Urgent" ? "rose" : t.priority === "High" ? "amber" : "zinc"}>
+              {t.priority}
+            </Badge>
+            {t.arrival_today && (
+              <Badge tone="brand">
+                <Plane className="mr-1 size-3" aria-hidden />
+                arrival{t.eta ? ` ${t.eta}` : " today"}
+              </Badge>
+            )}
+            {t.assignment_status === "Assigned" && t.mine && (
+              <Badge tone="amber">assigned to you</Badge>
+            )}
+          </div>
+        </div>
+      </div>
+      {t.special_requests && (
+        <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-sm text-amber-800">
+          Guest request: {t.special_requests}
+        </p>
+      )}
+      {t.notes && <p className="mt-2 text-sm text-zinc-500">{t.notes}</p>}
+
+      {/* pool tasks: claim first */}
+      {t.claimable ? (
+        <button
+          disabled={busy === t.name}
+          onClick={() => run(t.name, "kamra.api.hk_claim_task")}
+          className="mt-3 w-full rounded-xl bg-brand-600 py-3 text-base font-semibold text-white active:bg-brand-700"
+        >
+          Take this room
+        </button>
+      ) : t.assignment_status === "Assigned" ? (
+        // assigned to me, awaiting accept/reject
+        rejecting === t.name ? (
+          <div className="mt-3 space-y-2">
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-3 py-2.5 text-base"
+              placeholder="Reason (optional)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button
+                className="flex-1 rounded-xl border border-zinc-300 py-3 text-base font-semibold text-zinc-600"
+                onClick={() => { setRejecting(null); setReason("") }}
+              >
+                Keep
+              </button>
+              <button
+                disabled={busy === t.name}
+                onClick={() =>
+                  run(t.name, "kamra.api.hk_reject_task", { reason }).then(() => {
+                    setRejecting(null)
+                    setReason("")
+                  })
+                }
+                className="flex-1 rounded-xl bg-rose-600 py-3 text-base font-semibold text-white"
+              >
+                Send back
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 flex gap-2">
+            <button
+              disabled={busy === t.name}
+              onClick={() => setRejecting(t.name)}
+              className="flex-1 rounded-xl border border-zinc-300 py-3 text-base font-semibold text-zinc-600 active:bg-zinc-100"
+            >
+              Decline
+            </button>
+            <button
+              disabled={busy === t.name}
+              onClick={() => run(t.name, "kamra.api.hk_accept_task")}
+              className="flex-1 rounded-xl bg-brand-600 py-3 text-base font-semibold text-white active:bg-brand-700"
+            >
+              Accept
+            </button>
+          </div>
+        )
+      ) : (
+        // accepted/mine: work it
+        <div className="mt-3 flex gap-2">
+          {t.status === "Pending" ? (
+            <button
+              disabled={busy === t.name}
+              onClick={() => run(t.name, "kamra.api.hk_update_task", { status: "In Progress" })}
+              className="flex-1 rounded-xl border border-zinc-300 py-3 text-base font-semibold text-zinc-700 active:bg-zinc-100"
+            >
+              Start
+            </button>
+          ) : (
+            <span className="flex flex-1 items-center justify-center rounded-xl bg-sky-50 py-3 text-base font-medium text-sky-700">
+              In progress…
+            </span>
+          )}
+          <button
+            disabled={busy === t.name}
+            onClick={() => run(t.name, "kamra.api.hk_update_task", { status: "Done" })}
+            className="flex-1 rounded-xl bg-brand-600 py-3 text-base font-semibold text-white active:bg-brand-700"
+          >
+            Done ✓
+          </button>
+        </div>
+      )}
+    </li>
+  )
 
   return (
     <div className="min-h-screen bg-zinc-50 pb-20">
@@ -101,75 +239,36 @@ export default function HkApp() {
       </header>
 
       <main className="mx-auto max-w-lg px-3 py-4">
-        {view === "queue" && (
+        {view === "mine" && (
           <>
             <p className="mb-3 px-1 text-sm text-zinc-500">
-              {data?.tasks.length ?? "…"} task
-              {data?.tasks.length === 1 ? "" : "s"} - arrivals first
+              {mine.length} task{mine.length === 1 ? "" : "s"} for you - arrivals first
             </p>
             <ul className="space-y-3">
-              {(data?.tasks ?? []).map((t) => (
-                <li
-                  key={t.name}
-                  className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl font-bold tabular-nums">
-                      {t.room_number}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="font-medium">{t.task_type}</p>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                        <Badge
-                          tone={
-                            t.priority === "Urgent"
-                              ? "rose"
-                              : t.priority === "High"
-                                ? "amber"
-                                : "zinc"
-                          }
-                        >
-                          {t.priority}
-                        </Badge>
-                        {t.arrival_today && (
-                          <Badge tone="brand">
-                            <Plane className="mr-1 size-3" aria-hidden />
-                            arrival today
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {t.notes && (
-                    <p className="mt-2 text-sm text-zinc-500">{t.notes}</p>
-                  )}
-                  <div className="mt-3 flex gap-2">
-                    {t.status === "Pending" ? (
-                      <button
-                        disabled={busy === t.name}
-                        onClick={() => update(t.name, "In Progress")}
-                        className="flex-1 rounded-xl border border-zinc-300 py-3 text-base font-semibold text-zinc-700 active:bg-zinc-100"
-                      >
-                        Start
-                      </button>
-                    ) : (
-                      <span className="flex flex-1 items-center justify-center rounded-xl bg-sky-50 py-3 text-base font-medium text-sky-700">
-                        In progress…
-                      </span>
-                    )}
-                    <button
-                      disabled={busy === t.name}
-                      onClick={() => update(t.name, "Done")}
-                      className="flex-1 rounded-xl bg-brand-600 py-3 text-base font-semibold text-white active:bg-brand-700"
-                    >
-                      Done ✓
-                    </button>
-                  </div>
-                </li>
-              ))}
-              {data && data.tasks.length === 0 && (
+              {mine.map((t) => <TaskCard key={t.name} t={t} />)}
+              {mine.length === 0 && (
                 <li className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-zinc-400">
-                  All caught up - nothing in the queue.
+                  Nothing assigned to you. Check{" "}
+                  <button className="font-semibold text-brand-700" onClick={() => setView("pool")}>
+                    Available
+                  </button>{" "}
+                  to pick up a room.
+                </li>
+              )}
+            </ul>
+          </>
+        )}
+
+        {view === "pool" && (
+          <>
+            <p className="mb-3 px-1 text-sm text-zinc-500">
+              {pool.length} unassigned - take one to add it to your list
+            </p>
+            <ul className="space-y-3">
+              {pool.map((t) => <TaskCard key={t.name} t={t} />)}
+              {pool.length === 0 && (
+                <li className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-zinc-400">
+                  No unassigned rooms right now.
                 </li>
               )}
             </ul>
@@ -181,11 +280,11 @@ export default function HkApp() {
             {(data?.rooms ?? []).map((r) => (
               <div
                 key={r.name}
-                className={cn(
-                  "rounded-xl border p-3 text-center",
-                  hkTone[r.housekeeping_status],
-                )}
+                className={cn("relative rounded-xl border p-3 text-center", hkTone[r.housekeeping_status])}
               >
+                {r.vip ? (
+                  <Star className="absolute right-1.5 top-1.5 size-3.5 fill-amber-400 text-amber-400" aria-label="VIP" />
+                ) : null}
                 <div className="flex items-center justify-center gap-1 text-xl font-bold">
                   {r.room_number}
                   {r.occupancy_status === "Occupied" && (
@@ -195,19 +294,28 @@ export default function HkApp() {
                 <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide opacity-70">
                   {r.housekeeping_status}
                 </div>
-                {r.arrival_today && (
-                  <Plane className="mx-auto mt-1 size-3.5" aria-label="Arrival today" />
-                )}
+                <div className="mt-1 flex items-center justify-center gap-1">
+                  {r.arrival_today && (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-medium">
+                      <Plane className="size-3" aria-label="Arrival today" />
+                      {r.eta || ""}
+                    </span>
+                  )}
+                  {r.departure_today ? (
+                    <Clock className="size-3" aria-label="Departure today" />
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>
         )}
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-2 border-t border-zinc-200 bg-white">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-3 border-t border-zinc-200 bg-white">
         {(
           [
-            ["queue", "My Queue"],
+            ["mine", `My Tasks${mine.length ? ` (${mine.length})` : ""}`],
+            ["pool", `Available${pool.length ? ` (${pool.length})` : ""}`],
             ["rooms", "Rooms"],
           ] as const
         ).map(([key, label]) => (

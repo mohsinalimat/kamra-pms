@@ -457,13 +457,16 @@ def hk_queue(property: str):
 		filters={"property": property,
 		         "status": ("in", ["Pending", "In Progress"])},
 		fields=["name", "room", "task_type", "priority", "status", "notes",
-		        "creation"],
+		        "assigned_to_user", "assignment_status", "due_by", "creation"],
 		order_by="creation asc",
 	)
+	me = frappe.session.user
 	prio_rank = {"Urgent": 0, "High": 1, "Medium": 2, "Low": 3}
 	for t in tasks:
 		t["arrival_today"] = t.room in arriving_rooms
 		t["room_number"] = (t.room or "").split("-")[-1]
+		t["mine"] = bool(t.assigned_to_user) and t.assigned_to_user == me
+		t["claimable"] = not t.assigned_to_user
 	tasks.sort(key=lambda t: (
 		not t["arrival_today"],
 		0 if t.task_type == "Checkout Clean" else 1,
@@ -478,8 +481,51 @@ def hk_queue(property: str):
 		        "occupancy_status"],
 		order_by="room_number asc",
 	)
+
+	# guest context the housekeeper needs on the floor: who's in the room or
+	# arriving, whether they're a VIP, their requests and arrival timing
+	ctx = {}
+	stays = frappe.get_all(
+		"Reservation",
+		filters={"property": property, "room": ("is", "set"),
+		         "status": ("in", ["Confirmed", "Checked In"]),
+		         "check_in_date": ("<=", today), "check_out_date": (">=", today)},
+		fields=["room", "guest", "guest_name", "status", "special_requests",
+		        "eta", "check_in_date", "check_out_date"],
+	) + frappe.get_all(
+		"Reservation",
+		filters={"property": property, "room": ("is", "set"),
+		         "status": "Confirmed", "check_in_date": today},
+		fields=["room", "guest", "guest_name", "status", "special_requests",
+		        "eta", "check_in_date", "check_out_date"],
+	)
+	vips = set(frappe.get_all(
+		"Guest", filters={"name": ("in", [s.guest for s in stays if s.guest]), "vip": 1},
+		pluck="name")) if stays else set()
+	for s in stays:
+		c = ctx.setdefault(s.room, {})
+		if s.guest in vips:
+			c["vip"] = 1
+		if s.special_requests:
+			c["special_requests"] = s.special_requests
+		if str(s.check_in_date) == today:
+			c["arrival_today"] = 1
+			c["eta"] = str(s.eta or "")
+			c["arriving_guest"] = s.guest_name
+		if str(s.check_out_date) == today:
+			c["departure_today"] = 1
+		if s.status == "Checked In":
+			c["in_house_guest"] = s.guest_name
+
 	for r in rooms:
 		r["arrival_today"] = r.name in arriving_rooms
+		r.update(ctx.get(r.name, {}))
+	# tasks carry the same context so a card can show the VIP star inline
+	for t in tasks:
+		c = ctx.get(t.room, {})
+		t["vip"] = c.get("vip", 0)
+		t["special_requests"] = t.get("special_requests") or c.get("special_requests")
+		t["eta"] = c.get("eta")
 
 	return {"date": today, "tasks": tasks, "rooms": rooms}
 
@@ -500,6 +546,62 @@ def hk_update_task(task: str, status: str):
 		           rationale=f"{doc.task_type} for {doc.room} closed from mobile",
 		           channel="API")
 	return {"ok": True, "task": doc.name, "status": doc.status}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Housekeeping", "Kamra Agent")
+def hk_assign_task(task: str, user: str):
+	"""A supervisor hands a task to a specific housekeeper (awaits accept)."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	doc.assigned_to_user = user
+	doc.assignment_status = "Assigned"
+	doc.save()
+	from kamra.savings import log_action
+	log_action("hk_assign", "Housekeeping Task", doc.name, doc.property,
+	           rationale=f"{doc.task_type} {doc.room} → {user}")
+	return {"ok": True, "assignment_status": "Assigned", "assigned_to_user": user}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_claim_task(task: str):
+	"""A housekeeper takes an unassigned task from the pool for themselves."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	if doc.assigned_to_user and doc.assigned_to_user != frappe.session.user:
+		frappe.throw(f"Already taken by {doc.assigned_to_user}.")
+	doc.assigned_to_user = frappe.session.user
+	doc.assignment_status = "Accepted"
+	doc.save()
+	return {"ok": True, "assignment_status": "Accepted"}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_accept_task(task: str):
+	"""The assigned housekeeper accepts the task handed to them."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	doc.assignment_status = "Accepted"
+	if not doc.assigned_to_user:
+		doc.assigned_to_user = frappe.session.user
+	doc.save()
+	return {"ok": True, "assignment_status": "Accepted"}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_reject_task(task: str, reason: str = ""):
+	"""Decline a task - it drops back into the pool for someone else,
+	keeping the reason on record."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	who = doc.assigned_to_user or frappe.session.user
+	doc.assigned_to_user = None
+	doc.assignment_status = "Unassigned"
+	doc.reject_reason = f"{who}: {reason}" if reason else who
+	doc.save()
+	from kamra.savings import log_action
+	log_action("hk_reject", "Housekeeping Task", doc.name, doc.property,
+	           rationale=f"{who} declined {doc.task_type} {doc.room}: {reason}")
+	return {"ok": True, "assignment_status": "Unassigned"}
 
 
 @frappe.whitelist()
