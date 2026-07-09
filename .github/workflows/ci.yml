@@ -100,7 +100,7 @@ jobs:
           cd frappe-bench
           printf 'from kamra.scripts.eval_harness import execute\nexecute()\nexit\n' \
             | bench --site test.localhost console | tee eval.out
-          grep -q "19/19 passed" eval.out
+          grep -q "20/20 passed" eval.out
 
       - name: Fresh-install correctness (roles bind, SPA serves)
         run: |

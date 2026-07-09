@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import date_diff, now_datetime
+from frappe.utils import cint, date_diff, now_datetime
 
 
 class Reservation(Document):
@@ -12,6 +12,7 @@ class Reservation(Document):
 		self.validate_dates()
 		self.nights = date_diff(self.check_out_date, self.check_in_date)
 		self.validate_blacklist()
+		self.validate_occupancy()
 		self.validate_room_belongs_to_type()
 		self.validate_no_overlap()
 		self.validate_cancellation_path()
@@ -28,6 +29,40 @@ class Reservation(Document):
 			frappe.throw(_(
 				"Use the Cancel action (or the cancel_reservation API) so "
 				"the cancellation policy is applied."))
+
+	def validate_occupancy(self):
+		"""A room only sleeps so many. Checked when the party or room type
+		changes — legacy over-capacity stays can still check out."""
+		if not self.room_type:
+			return
+		old = None if self.is_new() else self.get_doc_before_save()
+		if old and (
+			cint(old.adults), cint(old.children), old.room_type
+		) == (cint(self.adults), cint(self.children), self.room_type):
+			return
+		adults, children = cint(self.adults), cint(self.children)
+		if adults < 1:
+			frappe.throw(_("A stay needs at least one adult."),
+				title=_("Room capacity"))
+		cap = frappe.db.get_value(
+			"Room Type", self.room_type,
+			["adults_capacity", "children_capacity", "room_type_name"],
+			as_dict=True,
+		) or frappe._dict()
+		over = []
+		if cint(cap.adults_capacity) and adults > cint(cap.adults_capacity):
+			over.append(_("{0} adults (max {1})").format(
+				adults, cint(cap.adults_capacity)))
+		if cint(cap.children_capacity) and children > cint(cap.children_capacity):
+			over.append(_("{0} children (max {1})").format(
+				children, cint(cap.children_capacity)))
+		if over:
+			frappe.throw(_(
+				"{0} can't sleep {1}. Reduce the party, pick a bigger room "
+				"type, or book additional rooms — use a Group Booking for "
+				"large parties."
+			).format(cap.room_type_name or self.room_type, _(" and ").join(over)),
+				title=_("Over room capacity"))
 
 	def validate_dates(self):
 		diff = date_diff(self.check_out_date, self.check_in_date)

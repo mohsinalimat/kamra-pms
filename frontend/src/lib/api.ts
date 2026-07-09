@@ -153,6 +153,7 @@ export interface BookingOptions {
     room_type_name: string
     base_price: number
     adults_capacity: number
+    children_capacity: number
   }[]
   meal_plans: {
     name: string

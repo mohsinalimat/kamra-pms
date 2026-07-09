@@ -493,6 +493,50 @@ def t19():
 	assert out["balance"] == 0, out["balance"]
 
 
+@check("room capacity: over-occupancy booking refused, at-capacity allowed")
+def t20():
+	g = _guest("Eval Crowd", "+91 70000 00020")
+	base = {
+		"doctype": "Reservation", "property": P, "guest": g,
+		"room_type": RT, "check_in_date": "2031-03-01",
+		"check_out_date": "2031-03-02", "auto_price": 1,
+	}
+	# the reported bug: 11 adults sailed into a 3-adult room type
+	try:
+		frappe.get_doc({**base, "adults": 11}).insert(ignore_permissions=True)
+		raise AssertionError("11 adults accepted in a 3-adult room type")
+	except frappe.ValidationError:
+		pass
+	try:
+		frappe.get_doc({**base, "adults": 2, "children": 5}).insert(
+			ignore_permissions=True)
+		raise AssertionError("5 children accepted in a 2-child room type")
+	except frappe.ValidationError:
+		pass
+	try:
+		frappe.get_doc({**base, "adults": 0}).insert(ignore_permissions=True)
+		raise AssertionError("a stay with no adults was accepted")
+	except frappe.ValidationError:
+		pass
+	# exactly at capacity is a legitimate full house
+	ok = frappe.get_doc({**base, "adults": 3, "children": 2, "room": ROOM}).insert(
+		ignore_permissions=True)
+	assert ok.name
+	# legacy over-capacity rows must still advance (e.g. check-out):
+	# only party/room-type edits re-trigger the guard
+	frappe.db.set_value("Reservation", ok.name, "adults", 9,
+		update_modified=False)
+	legacy = frappe.get_doc("Reservation", ok.name)
+	legacy.status = "Checked In"
+	legacy.save(ignore_permissions=True)  # must NOT throw
+	try:
+		legacy.adults = 12
+		legacy.save(ignore_permissions=True)
+		raise AssertionError("growing an over-capacity party was accepted")
+	except frappe.ValidationError:
+		pass
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -515,7 +559,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

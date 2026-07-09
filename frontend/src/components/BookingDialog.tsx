@@ -309,9 +309,16 @@ export function BookingDialog(props: {
   const set = (k: string, v: string | number) =>
     setForm((f) => ({ ...f, [k]: v }))
 
-  const roomTypeName =
-    options?.room_types.find((rt) => rt.name === form.room_type)
-      ?.room_type_name ?? ""
+  const selectedRt = options?.room_types.find(
+    (rt) => rt.name === form.room_type,
+  )
+  const roomTypeName = selectedRt?.room_type_name ?? ""
+  const overCapacity =
+    !!selectedRt &&
+    ((selectedRt.adults_capacity > 0 &&
+      form.adults > selectedRt.adults_capacity) ||
+      (selectedRt.children_capacity > 0 &&
+        form.children > selectedRt.children_capacity))
 
   return (
     <div
@@ -512,6 +519,48 @@ export function BookingDialog(props: {
                   />
                 </Field>
               </div>
+
+              {selectedRt &&
+                (selectedRt.adults_capacity > 0 ||
+                  selectedRt.children_capacity > 0) &&
+                (overCapacity ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                    {selectedRt.room_type_name} sleeps up to{" "}
+                    <strong>{selectedRt.adults_capacity} adults</strong>
+                    {selectedRt.children_capacity > 0 && (
+                      <>
+                        {" · "}
+                        <strong>
+                          {selectedRt.children_capacity} children
+                        </strong>
+                      </>
+                    )}{" "}
+                    per room. For a bigger party, split them across rooms —
+                    it books as one group.{" "}
+                    <button
+                      className="font-semibold text-brand-700 hover:underline"
+                      onClick={() =>
+                        setMoreRooms((rs) => [
+                          ...rs,
+                          {
+                            room_type: form.room_type,
+                            adults: 2,
+                            children: 0,
+                            meal_plan: form.meal_plan,
+                          },
+                        ])
+                      }
+                    >
+                      Add a room
+                    </button>
+                  </div>
+                ) : (
+                  <p className="-mt-2 text-xs text-zinc-400">
+                    Sleeps up to {selectedRt.adults_capacity} adults
+                    {selectedRt.children_capacity > 0 &&
+                      ` · ${selectedRt.children_capacity} children`}
+                  </p>
+                ))}
 
               {/* additional rooms - books the lot as one group */}
               {moreRooms.map((r, i) => (

@@ -2012,7 +2012,8 @@ def booking_options(property: str):
 	return {
 		"room_types": frappe.get_all(
 			"Room Type", filters={"property": property, "disabled": 0},
-			fields=["name", "room_type_name", "base_price", "adults_capacity"],
+			fields=["name", "room_type_name", "base_price",
+			        "adults_capacity", "children_capacity"],
 			order_by="base_price asc",
 		),
 		"meal_plans": frappe.get_all(
