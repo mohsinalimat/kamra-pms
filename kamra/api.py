@@ -600,6 +600,10 @@ def add_folio_charge(folio: str, charge_type: str, description: str,
 	if int(is_alcohol or 0) and doc.folio_type in ("Company", "Group"):
 		frappe.throw("Alcohol cannot be billed to a company folio - "
 		             "post it to the guest folio.")
+	# tax is the hotel's rule, not the caller's guess - without this an
+	# F&B/minibar charge posted without a rate lands on the bill untaxed
+	gst_rate = _resolve_charge_gst(doc.property, charge_type, description,
+	                               int(is_alcohol or 0), float(gst_rate or 0))
 	doc.append("charges", {
 		"posting_date": posting_date or nowdate(),
 		"charge_type": charge_type,

@@ -102,6 +102,13 @@ jobs:
             | bench --site test.localhost console | tee eval.out
           grep -q "20/20 passed" eval.out
 
+      - name: Run front-desk persona journey
+        run: |
+          cd frappe-bench
+          printf 'from kamra.scripts.frontdesk_eval import execute\nexecute()\nexit\n' \
+            | bench --site test.localhost console | tee journey.out
+          grep -q "13/13 passed" journey.out
+
       - name: Fresh-install correctness (roles bind, SPA serves)
         run: |
           cd frappe-bench
