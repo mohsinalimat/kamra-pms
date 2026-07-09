@@ -1,0 +1,102 @@
+"""Seed showcase experiences and venues onto an existing demo property so
+the booking engine and events diary look like a living resort.
+
+Run with:
+    bench --site <site> execute kamra.scripts.seed_showcase.execute
+
+Idempotent: each experience/venue is keyed by (property, name); re-running
+adds only what's missing, never duplicates.
+"""
+
+import frappe
+
+PROPERTY = "Kamra Demo Palace"
+
+# (name, category, price, duration, gst%, description, image)
+EXPERIENCES = [
+	("Sunrise Safari", "Tour", 3500, "3 hours", 5,
+	 "Open-jeep wildlife safari with a naturalist guide, tea and binoculars.",
+	 "https://images.unsplash.com/photo-1516426122078-c23e76319801?w=400"),
+	("Candlelight Romantic Dinner", "Dining", 4500, "2 hours", 5,
+	 "Private poolside table, five-course chef's menu, live acoustic music.",
+	 "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=400"),
+	("Ayurvedic Spa Ritual", "Spa", 2800, "90 min", 18,
+	 "Warm-oil abhyanga massage followed by a herbal steam and tea.",
+	 "https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=400"),
+	("Couple's Spa Retreat", "Spa", 5200, "2 hours", 18,
+	 "Side-by-side massage suite, aroma soak and a fruit platter for two.",
+	 "https://images.unsplash.com/photo-1600334129128-685c5582fd35?w=400"),
+	("Heritage City Walk", "Tour", 1200, "2.5 hours", 5,
+	 "Guided old-town walk through bazaars, temples and hidden courtyards.",
+	 "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=400"),
+	("Cooking Class with the Chef", "Activity", 2200, "2 hours", 5,
+	 "Hands-on regional-thali class, spice-market tour and a sit-down lunch.",
+	 "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=400"),
+	("Sunset Lake Cruise", "Activity", 1800, "75 min", 5,
+	 "Slow boat across the lake at golden hour with canapes and sparkling wine.",
+	 "https://images.unsplash.com/photo-1514890547357-a9ee288728e0?w=400"),
+	("Airport Transfer (Sedan)", "Transport", 1500, "one way", 5,
+	 "Private air-conditioned sedan, meet-and-greet, bottled water.",
+	 "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=400"),
+	("Yoga at Dawn", "Activity", 800, "60 min", 5,
+	 "Guided hatha-yoga session on the lawn as the sun comes up.",
+	 "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400"),
+	("In-Room Floral Turndown", "Other", 2500, "on arrival", 18,
+	 "Rose-petal bed, balloons and a cake — set up before you reach the room.",
+	 "https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=400"),
+]
+
+# (name, capacity, base_price, amenities)
+VENUES = [
+	("Grand Ballroom", 400, 85000,
+	 "Pillarless hall, stage, LED wall, in-house AV, green rooms."),
+	("Garden Lawn", 600, 65000,
+	 "Open-air lawn with fairy lights, marquee option, generator backup."),
+	("Riverside Deck", 120, 40000,
+	 "Waterfront deck for cocktails and intimate ceremonies."),
+	("Boardroom", 20, 12000,
+	 "Executive meeting room, video-conferencing, whiteboard, coffee service."),
+]
+
+
+def execute():
+	if not frappe.db.exists("Property", PROPERTY):
+		print(f"Property '{PROPERTY}' not found — run seed_demo first.")
+		return
+
+	added_exp = 0
+	for name, cat, price, dur, gst, desc, img in EXPERIENCES:
+		if frappe.db.exists("Experience", {"property": PROPERTY,
+		                                    "experience_name": name}):
+			continue
+		frappe.get_doc({
+			"doctype": "Experience",
+			"property": PROPERTY,
+			"experience_name": name,
+			"category": cat,
+			"price": price,
+			"duration": dur,
+			"gst_rate": gst,
+			"description": desc,
+			"image_url": img,
+			"show_on_booking_page": 1,
+		}).insert(ignore_permissions=True)
+		added_exp += 1
+
+	added_venue = 0
+	for name, cap, price, amenities in VENUES:
+		if frappe.db.exists("Venue", {"property": PROPERTY, "venue_name": name}):
+			continue
+		frappe.get_doc({
+			"doctype": "Venue",
+			"property": PROPERTY,
+			"venue_name": name,
+			"capacity": cap,
+			"base_price": price,
+			"amenities": amenities,
+		}).insert(ignore_permissions=True)
+		added_venue += 1
+
+	frappe.db.commit()
+	print(f"Showcase seed: +{added_exp} experiences, +{added_venue} venues "
+	      f"on '{PROPERTY}'.")

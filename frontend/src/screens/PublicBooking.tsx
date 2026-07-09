@@ -63,6 +63,16 @@ interface Showcase {
     media: { media_type: string; url: string; caption: string | null }[]
   }[]
   meal_plans: { name: string; code: string; label: string; price_per_adult: number }[]
+  experiences: {
+    name: string
+    experience_name: string
+    category: string | null
+    price: number
+    duration: string | null
+    description: string | null
+    image_url: string | null
+    gst_rate: number
+  }[]
 }
 
 interface StayResult {
@@ -113,6 +123,8 @@ export default function PublicBooking() {
   const [results, setResults] = useState<Record<string, StayResult>>({})
   const [booking, setBooking] = useState<string | null>(null) // room type name
   const [form, setForm] = useState({ guest_name: "", phone: "", email: "", meal_plan: "", special_requests: "" })
+  // experience add-ons the guest picked: docname -> quantity
+  const [addons, setAddons] = useState<Record<string, number>>({})
   const [done, setDone] = useState<{ reservation: string; amount: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -241,6 +253,9 @@ export default function PublicBooking() {
           adults: search.adults,
           children: search.children,
           ...form,
+          addons: Object.entries(addons)
+            .filter(([, qty]) => qty > 0)
+            .map(([experience, qty]) => ({ experience, qty })),
         },
       )
       setDone({ reservation: res.reservation, amount: res.amount_after_tax })
@@ -679,6 +694,100 @@ export default function PublicBooking() {
                   ))}
                 </select>
               </label>
+              {data.experiences.length > 0 && (
+                <div className="block">
+                  <span className="mb-1.5 block text-sm font-medium text-zinc-600">
+                    Add experiences
+                  </span>
+                  <div className="space-y-2">
+                    {data.experiences.map((exp) => {
+                      const qty = addons[exp.name] || 0
+                      const on = qty > 0
+                      return (
+                        <div
+                          key={exp.name}
+                          className={
+                            "flex items-center gap-3 rounded-xl border p-2.5 " +
+                            (on ? "border-brand-400 bg-brand-50/50" : "border-zinc-200")
+                          }
+                        >
+                          {exp.image_url && (
+                            <img
+                              src={exp.image_url}
+                              alt=""
+                              className="size-12 shrink-0 rounded-lg object-cover"
+                            />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate text-sm font-medium text-zinc-800">
+                                {exp.experience_name}
+                              </span>
+                              {exp.category && (
+                                <span className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">
+                                  {exp.category}
+                                </span>
+                              )}
+                            </div>
+                            <div className="truncate text-xs text-zinc-500">
+                              ₹{inr(exp.price)}
+                              {exp.duration ? ` · ${exp.duration}` : ""}
+                              {exp.description ? ` · ${exp.description}` : ""}
+                            </div>
+                          </div>
+                          {on ? (
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button
+                                type="button"
+                                className="size-7 rounded-lg border border-zinc-300 text-zinc-600 hover:bg-white"
+                                onClick={() =>
+                                  setAddons((a) => ({ ...a, [exp.name]: qty - 1 }))
+                                }
+                              >
+                                −
+                              </button>
+                              <span className="w-5 text-center text-sm tabular-nums">
+                                {qty}
+                              </span>
+                              <button
+                                type="button"
+                                className="size-7 rounded-lg border border-zinc-300 text-zinc-600 hover:bg-white"
+                                onClick={() =>
+                                  setAddons((a) => ({ ...a, [exp.name]: qty + 1 }))
+                                }
+                              >
+                                +
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="shrink-0 rounded-lg border border-brand-500 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50"
+                              onClick={() =>
+                                setAddons((a) => ({ ...a, [exp.name]: 1 }))
+                              }
+                            >
+                              Add
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {(() => {
+                    const addonTotal = data.experiences.reduce(
+                      (s, e) => s + (addons[e.name] || 0) * e.price,
+                      0,
+                    )
+                    return addonTotal > 0 ? (
+                      <p className="mt-2 text-right text-xs text-zinc-500">
+                        Experiences: +₹{inr(addonTotal)} · added to your bill at
+                        the hotel
+                      </p>
+                    ) : null
+                  })()}
+                </div>
+              )}
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-zinc-600">Special requests</span>
                 <textarea className={inputCls} rows={2} value={form.special_requests}

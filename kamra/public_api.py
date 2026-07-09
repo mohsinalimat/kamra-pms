@@ -57,8 +57,8 @@ def showcase(property: str):
 		"Experience",
 		filters={"property": property, "disabled": 0,
 		         "show_on_booking_page": 1},
-		fields=["experience_name", "category", "price", "duration",
-		        "description", "image_url"],
+		fields=["name", "experience_name", "category", "price", "duration",
+		        "description", "image_url", "gst_rate"],
 		order_by="category asc",
 	)
 
@@ -259,11 +259,27 @@ def precheckin_submit(token: str, id_type: str, id_number: str,
 def book(property: str, room_type: str, check_in_date: str,
          check_out_date: str, guest_name: str, phone: str,
          email: str = "", adults: int = 2, children: int = 0,
-         meal_plan: str = "", special_requests: str = ""):
+         meal_plan: str = "", special_requests: str = "", addons=None):
 	"""Create a Website booking (pay at hotel). Guest identity is the
 	phone number; staff verify at check-in."""
 	if not guest_name.strip() or not phone.strip():
 		frappe.throw("Name and phone are required.")
+
+	# a guest may only add experiences the hotel actually publishes for this
+	# property - never a private, disabled or another property's experience,
+	# and always at the hotel's own price (qty is all the guest controls)
+	if isinstance(addons, str):
+		addons = frappe.parse_json(addons)
+	public_ids = set(frappe.get_all(
+		"Experience",
+		filters={"property": property, "disabled": 0, "show_on_booking_page": 1},
+		pluck="name",
+	))
+	safe_addons = [
+		{"experience": a["experience"], "qty": max(1, int(a.get("qty") or 1))}
+		for a in (addons or [])
+		if a.get("experience") in public_ids
+	]
 
 	from kamra.api import create_booking
 
@@ -280,6 +296,7 @@ def book(property: str, room_type: str, check_in_date: str,
 			children=int(children),
 			meal_plan=meal_plan or None,
 			source="Website",
+			addons=safe_addons or None,
 		)
 		if email or special_requests:
 			frappe.db.set_value("Reservation", result["reservation"], {

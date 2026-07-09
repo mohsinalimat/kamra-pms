@@ -40,8 +40,10 @@ def execute():
 	frappe.db.set_default("kamra_demo_mode", "1")
 	if frappe.db.exists("Property", PROPERTY):
 		ensure_users()  # keep login accounts present even on re-run
+		from kamra.scripts.seed_showcase import execute as seed_showcase
+		seed_showcase()  # top up experiences/venues (idempotent)
 		frappe.db.commit()
-		print("Demo property already exists — ensured demo users, skipping seed.")
+		print("Demo property already exists — ensured demo users + showcase.")
 		return
 
 	random.seed(8)  # reproducible demo
@@ -199,6 +201,10 @@ def execute():
 
 	# Demo login accounts (one per role) so the gated login buttons work.
 	ensure_users()
+
+	# showcase experiences + venues (safari, spa, romantic dinner, ballrooms)
+	from kamra.scripts.seed_showcase import execute as seed_showcase
+	seed_showcase()
 
 	frappe.db.commit()
 	print(f"Seeded demo property '{PROPERTY}' with rooms, guests, reservations and login users.")
