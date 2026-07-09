@@ -627,6 +627,38 @@ def hk_log_item(property: str, item_description: str, condition: str = "Found",
 	return {"ok": True, "name": doc.name}
 
 
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_post_consumable(room: str, charge_type: str, description: str,
+                       amount: float):
+	"""Housekeeping posts what they find in the room - minibar consumption or
+	laundry - onto the in-house guest's folio. Scoped to those two types so
+	the floor can't touch discounts, allowances or room charges."""
+	if charge_type not in ("Minibar", "Laundry"):
+		frappe.throw("Housekeeping can only post Minibar or Laundry.")
+	if float(amount) <= 0:
+		frappe.throw("Amount must be positive.")
+	res = frappe.db.get_value(
+		"Reservation",
+		{"room": room, "status": "Checked In"},
+		["name", "property"], as_dict=True)
+	if not res:
+		frappe.throw("No checked-in guest in that room to bill.")
+	# post through the governed agent user (same pattern as public bookings):
+	# the housekeeper is authorized above and scoped to two charge types, and
+	# GST is still resolved server-side. Attribution is stamped below.
+	me = frappe.session.user
+	frappe.set_user("agent@kamra.local")
+	try:
+		out = post_stay_charge(res.name, charge_type, description, float(amount))
+	finally:
+		frappe.set_user(me)
+	from kamra.savings import log_action
+	log_action("hk_charge", "Folio", out.get("folio"), res.property,
+	           rationale=f"{charge_type} ₹{amount} to {room} ({description})")
+	return {"ok": True, "folio": out.get("folio"), "balance": out.get("balance")}
+
+
 @frappe.whitelist()
 @require_roles("Front Desk", "Kamra Agent")
 def create_ticket(property: str, subject: str, category: str,

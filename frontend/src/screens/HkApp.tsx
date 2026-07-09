@@ -62,6 +62,8 @@ export default function HkApp() {
   const [reason, setReason] = useState("")
   const [logItem, setLogItem] = useState<{ desc: string; condition: string; room: string } | null>(null)
   const [logMsg, setLogMsg] = useState<string | null>(null)
+  const [charge, setCharge] = useState<{ room: string; num: string; type: string; desc: string; amount: string } | null>(null)
+  const [chargeMsg, setChargeMsg] = useState<string | null>(null)
 
   const checkAuth = () =>
     whoami()
@@ -286,9 +288,18 @@ export default function HkApp() {
         {view === "rooms" && (
           <div className="grid grid-cols-3 gap-2">
             {(data?.rooms ?? []).map((r) => (
-              <div
+              <button
                 key={r.name}
-                className={cn("relative rounded-xl border p-3 text-center", hkTone[r.housekeeping_status])}
+                disabled={r.occupancy_status !== "Occupied"}
+                onClick={() => {
+                  setCharge({ room: r.name, num: r.room_number, type: "Minibar", desc: "", amount: "" })
+                  setChargeMsg(null)
+                }}
+                className={cn(
+                  "relative rounded-xl border p-3 text-center",
+                  hkTone[r.housekeeping_status],
+                  r.occupancy_status === "Occupied" ? "active:brightness-95" : "cursor-default",
+                )}
               >
                 {r.vip ? (
                   <Star className="absolute right-1.5 top-1.5 size-3.5 fill-amber-400 text-amber-400" aria-label="VIP" />
@@ -313,9 +324,14 @@ export default function HkApp() {
                     <Clock className="size-3" aria-label="Departure today" />
                   ) : null}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
+        )}
+        {view === "rooms" && (
+          <p className="mt-3 text-center text-xs text-zinc-400">
+            Tap an occupied room to post minibar or laundry.
+          </p>
         )}
       </main>
 
@@ -423,6 +439,99 @@ export default function HkApp() {
                     }}
                   >
                     Log it
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {charge && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40"
+          onClick={() => setCharge(null)}
+        >
+          <div
+            className="w-full rounded-t-2xl bg-white p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-3 text-lg font-semibold">
+              Post to room {charge.num}
+            </h2>
+            {chargeMsg ? (
+              <div className="space-y-3">
+                <p className="rounded-xl bg-emerald-50 px-3 py-3 text-emerald-800">
+                  {chargeMsg}
+                </p>
+                <button
+                  className="w-full rounded-xl bg-brand-600 py-3 text-base font-semibold text-white"
+                  onClick={() => setCharge(null)}
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {["Minibar", "Laundry"].map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setCharge({ ...charge, type: t })}
+                      className={cn(
+                        "rounded-xl border py-2.5 text-sm font-semibold",
+                        charge.type === t
+                          ? "border-brand-500 bg-brand-50 text-brand-700"
+                          : "border-zinc-300 text-zinc-600",
+                      )}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base"
+                  placeholder={charge.type === "Minibar" ? "e.g. 2 cola, 1 water" : "e.g. 3 shirts pressed"}
+                  value={charge.desc}
+                  autoFocus
+                  onChange={(e) => setCharge({ ...charge, desc: e.target.value })}
+                />
+                <input
+                  className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base"
+                  placeholder="Amount ₹"
+                  inputMode="numeric"
+                  value={charge.amount}
+                  onChange={(e) => setCharge({ ...charge, amount: e.target.value })}
+                />
+                <div className="flex gap-2">
+                  <button
+                    className="flex-1 rounded-xl border border-zinc-300 py-3 text-base font-semibold text-zinc-600"
+                    onClick={() => setCharge(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!charge.desc.trim() || !Number(charge.amount) || busy === "charge"}
+                    className="flex-1 rounded-xl bg-brand-600 py-3 text-base font-semibold text-white disabled:opacity-50"
+                    onClick={async () => {
+                      setBusy("charge")
+                      try {
+                        await call("kamra.api.hk_post_consumable", {
+                          room: charge.room,
+                          charge_type: charge.type,
+                          description: charge.desc.trim(),
+                          amount: Number(charge.amount),
+                        })
+                        setChargeMsg(`Posted ₹${charge.amount} ${charge.type.toLowerCase()} to room ${charge.num}.`)
+                        load()
+                      } catch (e) {
+                        setChargeMsg((e as Error).message || "Couldn't post - is the guest checked in?")
+                      } finally {
+                        setBusy(null)
+                      }
+                    }}
+                  >
+                    Post ₹{charge.amount || "0"}
                   </button>
                 </div>
               </div>
