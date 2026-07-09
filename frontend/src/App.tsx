@@ -46,6 +46,7 @@ import {
   mealPlansConfig,
   ratePlansConfig,
   reservationsConfig,
+  roomBlocksConfig,
   roomTypesConfig,
   roomsConfig,
   seasonsConfig,
@@ -188,6 +189,10 @@ export default function App() {
           <Route
             path="room-types"
             element={<ResourceScreen config={roomTypesConfig} />}
+          />
+          <Route
+            path="room-blocks"
+            element={<ResourceScreen config={roomBlocksConfig} />}
           />
           <Route
             path="rate-plans"

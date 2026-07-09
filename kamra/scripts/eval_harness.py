@@ -537,6 +537,29 @@ def t20():
 		pass
 
 
+@check("room block: held room leaves availability, release restores it")
+def t21():
+	from kamra import api
+	before = len(api.available_rooms(P, RT, "2033-01-10", "2033-01-12"))
+	assert before >= 1, before
+	b = api.create_room_block(P, ROOM, "2033-01-10", "2033-01-12",
+		"VIP Hold", "eval hold")
+	held = len(api.available_rooms(P, RT, "2033-01-10", "2033-01-12"))
+	assert held == before - 1, (before, held)
+	# a non-overlapping window is untouched
+	assert len(api.available_rooms(P, RT, "2033-02-01", "2033-02-02")) == before
+	api.release_room_block(b["name"])
+	assert len(api.available_rooms(P, RT, "2033-01-10", "2033-01-12")) == before
+	# can't hold a room that's already sold for the window
+	g = _guest("Eval Held", "+91 70000 00021")
+	_res(g, "2033-03-01", "2033-03-03", ROOM)
+	try:
+		api.create_room_block(P, ROOM, "2033-03-01", "2033-03-03", "Maintenance")
+		raise AssertionError("blocked an already-booked room")
+	except frappe.ValidationError:
+		pass
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -559,7 +582,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

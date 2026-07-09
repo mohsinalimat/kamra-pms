@@ -1823,8 +1823,21 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 	for b in bookings:
 		b["vip"] = 1 if b.guest in vip else 0
 		by_room.setdefault(b.room, []).append(b)
+	# rooms held out of sale (house use, VIP, maintenance) draw as bands too
+	blocks = frappe.get_all(
+		"Room Block",
+		filters={
+			"property": property, "block_status": "Active",
+			"from_date": ("<", end), "to_date": (">", start),
+		},
+		fields=["name", "room", "reason", "from_date", "to_date", "note"],
+	)
+	blocks_by_room = {}
+	for k in blocks:
+		blocks_by_room.setdefault(k.room, []).append(k)
 	for r in rooms:
 		r["bookings"] = by_room.get(r.name, [])
+		r["blocks"] = blocks_by_room.get(r.name, [])
 	return {
 		"start": str(start), "days": days,
 		"dates": [str(add_days(start, i)) for i in range(days)],
@@ -2395,6 +2408,13 @@ def _available_rooms_raw(property: str, room_type: str, check_in_date: str,
 			  AND GREATEST(b.check_out_date,
 			               DATE_ADD(b.check_in_date, INTERVAL 1 DAY)) > %(check_in)s
 		  )
+		  AND NOT EXISTS (
+			SELECT 1 FROM `tabRoom Block` k
+			WHERE k.room = r.name
+			  AND k.block_status = 'Active'
+			  AND k.from_date < %(check_out)s
+			  AND k.to_date > %(check_in)s
+		  )
 		ORDER BY r.room_number
 		""",
 		{
@@ -2405,6 +2425,66 @@ def _available_rooms_raw(property: str, room_type: str, check_in_date: str,
 		},
 		as_dict=True,
 	)
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
+def room_blocks(property: str, active_only: int = 1):
+	"""Rooms held out of sale (house use, VIP, maintenance)."""
+	filters = {"property": property}
+	if int(active_only or 0):
+		filters["block_status"] = "Active"
+	rows = frappe.get_all(
+		"Room Block", filters=filters,
+		fields=["name", "room", "reason", "from_date", "to_date",
+		        "block_status", "note", "released_by", "released_on"],
+		order_by="from_date asc",
+	)
+	nums = {r.name: r.room_number for r in frappe.get_all(
+		"Room", filters={"property": property},
+		fields=["name", "room_number"])}
+	for r in rows:
+		r["room_number"] = nums.get(r.room, r.room)
+	return rows
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def create_room_block(property: str, room: str, from_date: str,
+                      to_date: str, reason: str = "House Use",
+                      note: str | None = None):
+	"""Hold a room out of sale for a date range. Refused if the room is
+	already booked in that window (move the guest first)."""
+	doc = frappe.get_doc({
+		"doctype": "Room Block",
+		"property": property,
+		"room": room,
+		"from_date": from_date,
+		"to_date": to_date,
+		"reason": reason,
+		"note": note or None,
+		"block_status": "Active",
+	})
+	doc.insert()
+	from kamra.savings import log_action
+	log_action("room_block", "Room Block", doc.name, property,
+	           rationale=f"{reason}: {room} {from_date}→{to_date}")
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def release_room_block(name: str):
+	"""Free a held room before its end date (the room returns to sale)."""
+	doc = frappe.get_doc("Room Block", name)
+	doc.block_status = "Released"
+	doc.released_by = frappe.session.user
+	doc.released_on = frappe.utils.now_datetime()
+	doc.save()
+	from kamra.savings import log_action
+	log_action("room_unblock", "Room Block", doc.name, doc.property,
+	           rationale=f"released {doc.room}")
+	return {"name": doc.name, "block_status": "Released"}
 
 
 @frappe.whitelist()

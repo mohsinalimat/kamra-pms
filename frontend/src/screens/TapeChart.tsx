@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import type { ShellContext } from "../AppShell"
-import { ChevronDown, ChevronLeft, ChevronRight, Sparkles, Star } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight, Lock, Sparkles, Star } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
 import { listResource, serverError } from "../lib/resource"
 import { Badge } from "../components/ui/badge"
@@ -27,6 +27,14 @@ interface TapeBooking {
   group_booking?: string | null
 }
 
+interface TapeBlock {
+  name: string
+  reason: string
+  from_date: string
+  to_date: string
+  note?: string | null
+}
+
 interface TapeRoom {
   name: string
   room_number: string
@@ -35,6 +43,7 @@ interface TapeRoom {
   floor?: string | null
   housekeeping_status: string
   bookings: TapeBooking[]
+  blocks?: TapeBlock[]
 }
 
 /** Who is coming - a visible marker on the bar + a label for the tooltip. */
@@ -356,6 +365,28 @@ export default function TapeChart() {
                           <div key={d} style={{ width: cellW }}
                             className="shrink-0 border-l border-zinc-100" />
                         ))}
+                        {/* held-out-of-sale bands (house use, VIP, maintenance) */}
+                        {(room.blocks ?? []).map((k) => {
+                          const s = Math.max(0,
+                            (new Date(k.from_date).getTime() - new Date(data.start).getTime()) / 86_400_000)
+                          const e = Math.min(DAYS,
+                            (new Date(k.to_date).getTime() - new Date(data.start).getTime()) / 86_400_000)
+                          if (e <= 0 || s >= DAYS) return null
+                          return (
+                            <div key={k.name}
+                              style={{
+                                left: 130 + s * cellW + 2,
+                                width: (e - s) * cellW - 4,
+                                backgroundImage:
+                                  "repeating-linear-gradient(45deg, #d4d4d8 0 6px, #e4e4e7 6px 12px)",
+                              }}
+                              className="absolute top-1.5 flex h-8 items-center gap-1 truncate rounded-md border border-zinc-300 px-1.5 text-left text-[11px] font-medium text-zinc-600"
+                              title={`${k.reason}${k.note ? ` · ${k.note}` : ""} · ${k.from_date} → ${k.to_date}`}>
+                              <Lock className="size-3 shrink-0" aria-hidden />
+                              <span className="truncate">{k.reason}</span>
+                            </div>
+                          )
+                        })}
                         {/* booking bars */}
                         {room.bookings.map((b) => {
                           const s = Math.max(0,
@@ -407,6 +438,10 @@ export default function TapeChart() {
         </span>
         <span className="flex items-center gap-1">
           <span className="size-2 rounded-full bg-orange-400" /> OTA
+        </span>
+        <span className="flex items-center gap-1">
+          <Lock className="size-3 text-zinc-500" /> Held (house use / VIP /
+          maintenance)
         </span>
         <span>Click a bar to move rooms or change dates.</span>
       </div>

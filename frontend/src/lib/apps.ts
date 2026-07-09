@@ -46,6 +46,7 @@ import {
   Camera,
   HelpCircle,
   Search,
+  Lock,
 } from "lucide-react"
 
 export interface AppNavItem {
@@ -85,6 +86,7 @@ export const APPS: AppDef[] = [
       { to: "/tape", label: "Tape Chart", icon: LayoutGrid },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       { to: "/guests", label: "Guests", icon: Users },
+      { to: "/room-blocks", label: "Room Blocks", icon: Lock },
     ],
     extraPrefixes: ["/grc", "/cancelled", "/agents"],
   },

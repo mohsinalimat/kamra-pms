@@ -203,6 +203,37 @@ export const venuesConfig: ScreenConfig = {
   ],
 }
 
+export const roomBlocksConfig: ScreenConfig = {
+  doctype: "Room Block",
+  title: "Room Blocks",
+  description:
+    "Hold rooms out of sale for house use, VIPs, owners or maintenance. Blocked rooms don't show as available and won't sell.",
+  searchFields: ["room", "note"],
+  filters: [
+    { field: "reason", label: "Reason", options: ["House Use", "VIP Hold", "Owner", "Maintenance", "Other"] },
+    { field: "block_status", label: "Status", options: ["Active", "Released"] },
+  ],
+  pageSize: 25,
+  propertyScoped: true,
+  orderBy: "from_date asc",
+  columns: [
+    { field: "room", label: "Room" },
+    { field: "reason", label: "Reason", badge: true },
+    { field: "from_date", label: "From" },
+    { field: "to_date", label: "To" },
+    { field: "block_status", label: "Status", badge: true },
+    { field: "note", label: "Note" },
+  ],
+  form: [
+    { field: "room", label: "Room", type: "link", linkDoctype: "Room", required: true },
+    { field: "reason", label: "Reason", type: "select", options: ["House Use", "VIP Hold", "Owner", "Maintenance", "Other"], required: true },
+    { field: "from_date", label: "From date", type: "date", required: true },
+    { field: "to_date", label: "To date (exclusive)", type: "date", required: true },
+    { field: "block_status", label: "Status", type: "select", options: ["Active", "Released"] },
+    { field: "note", label: "Note", type: "data" },
+  ],
+}
+
 export const venueBookingsConfig: ScreenConfig = {
   doctype: "Venue Booking",
   dateFilter: { field: "event_date", label: "Event date" },
