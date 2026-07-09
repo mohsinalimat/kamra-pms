@@ -604,6 +604,29 @@ def hk_reject_task(task: str, reason: str = ""):
 	return {"ok": True, "assignment_status": "Unassigned"}
 
 
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_log_item(property: str, item_description: str, condition: str = "Found",
+                room: str | None = None):
+	"""A floor housekeeper logs a lost/found/missing/damaged item from the
+	phone. Lands in the Lost & Found register for the desk to reconcile."""
+	doc = frappe.get_doc({
+		"doctype": "Lost And Found Item",
+		"property": property,
+		"item_description": item_description,
+		"condition": condition,
+		"found_in_room": room or None,
+		"found_on": nowdate(),
+		"found_by": frappe.session.user,
+		"status": "In Storage",
+	}).insert()
+	from kamra.savings import log_action
+	log_action("lost_found_logged", "Lost And Found Item", doc.name, property,
+	           rationale=f"{condition}: {item_description}"
+	                     + (f" in {room}" if room else ""))
+	return {"ok": True, "name": doc.name}
+
+
 @frappe.whitelist()
 @require_roles("Front Desk", "Kamra Agent")
 def create_ticket(property: str, subject: str, category: str,

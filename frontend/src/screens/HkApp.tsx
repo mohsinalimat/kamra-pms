@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { BedDouble, LogOut, Plane, RefreshCw, Star, Clock } from "lucide-react"
+import { BedDouble, LogOut, Plane, RefreshCw, Star, Clock, PackageSearch } from "lucide-react"
 import {
   call,
   getCurrentProperty,
@@ -60,6 +60,8 @@ export default function HkApp() {
   const [view, setView] = useState<"mine" | "pool" | "rooms">("mine")
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [reason, setReason] = useState("")
+  const [logItem, setLogItem] = useState<{ desc: string; condition: string; room: string } | null>(null)
+  const [logMsg, setLogMsg] = useState<string | null>(null)
 
   const checkAuth = () =>
     whoami()
@@ -226,6 +228,12 @@ export default function HkApp() {
         <img src={asset("kamra-mark.svg")} alt="" className="size-6" aria-hidden />
         <span className="font-semibold">Housekeeping</span>
         <span className="ml-auto flex items-center gap-3">
+          <button
+            onClick={() => { setLogItem({ desc: "", condition: "Found", room: "" }); setLogMsg(null) }}
+            aria-label="Log a lost or found item"
+          >
+            <PackageSearch className="size-5 text-zinc-400" />
+          </button>
           <button onClick={load} aria-label="Refresh">
             <RefreshCw className="size-5 text-zinc-400" />
           </button>
@@ -331,6 +339,97 @@ export default function HkApp() {
           </button>
         ))}
       </nav>
+
+      {logItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40"
+          onClick={() => setLogItem(null)}
+        >
+          <div
+            className="w-full rounded-t-2xl bg-white p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-3 text-lg font-semibold">Log an item</h2>
+            {logMsg ? (
+              <div className="space-y-3">
+                <p className="rounded-xl bg-emerald-50 px-3 py-3 text-emerald-800">
+                  {logMsg}
+                </p>
+                <button
+                  className="w-full rounded-xl bg-brand-600 py-3 text-base font-semibold text-white"
+                  onClick={() => setLogItem(null)}
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  {["Found", "Missing", "Damaged"].map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setLogItem({ ...logItem, condition: c })}
+                      className={cn(
+                        "rounded-xl border py-2.5 text-sm font-semibold",
+                        logItem.condition === c
+                          ? "border-brand-500 bg-brand-50 text-brand-700"
+                          : "border-zinc-300 text-zinc-600",
+                      )}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base"
+                  placeholder="What is it? (e.g. black umbrella)"
+                  value={logItem.desc}
+                  autoFocus
+                  onChange={(e) => setLogItem({ ...logItem, desc: e.target.value })}
+                />
+                <select
+                  className="w-full rounded-xl border border-zinc-300 px-3 py-3 text-base"
+                  value={logItem.room}
+                  onChange={(e) => setLogItem({ ...logItem, room: e.target.value })}
+                >
+                  <option value="">Room (optional)</option>
+                  {(data?.rooms ?? []).map((r) => (
+                    <option key={r.name} value={r.name}>{r.room_number}</option>
+                  ))}
+                </select>
+                <div className="flex gap-2">
+                  <button
+                    className="flex-1 rounded-xl border border-zinc-300 py-3 text-base font-semibold text-zinc-600"
+                    onClick={() => setLogItem(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!logItem.desc.trim() || busy === "log"}
+                    className="flex-1 rounded-xl bg-brand-600 py-3 text-base font-semibold text-white disabled:opacity-50"
+                    onClick={async () => {
+                      setBusy("log")
+                      try {
+                        await call("kamra.api.hk_log_item", {
+                          property: getCurrentProperty(),
+                          item_description: logItem.desc.trim(),
+                          condition: logItem.condition,
+                          room: logItem.room || null,
+                        })
+                        setLogMsg(`Logged ${logItem.condition.toLowerCase()}: ${logItem.desc.trim()}`)
+                      } finally {
+                        setBusy(null)
+                      }
+                    }}
+                  >
+                    Log it
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
