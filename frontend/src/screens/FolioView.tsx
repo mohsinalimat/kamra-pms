@@ -121,10 +121,8 @@ export default function FolioView() {
     is_alcohol: false,
   })
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [routeFor, setRouteFor] = useState<string | null>(null)
   const [voidFor, setVoidFor] = useState<string | null>(null)
-  const [splitVal, setSplitVal] = useState("50%")
-  const [splitTarget, setSplitTarget] = useState("")
+  const [partVal, setPartVal] = useState("")
   const [payment, setPayment] = useState({ mode: "UPI", amount: "", reference: "" })
   const [showCancel, setShowCancel] = useState(false)
   const [cancelReason, setCancelReason] = useState("")
@@ -538,51 +536,156 @@ export default function FolioView() {
             const targets = siblings.filter(
               (s) => s.status === "Open" && s.name !== folio.name,
             )
-            const routable = open && targets.length > 0
+            // moving is always possible on an open folio - the Move panel
+            // can mint a fresh Extra/Company folio as the destination
             const editable = open // charges can be voided on any open folio
             return (
               <>
-                {routable && selected.size > 0 && (
-                  <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm print:hidden">
-                    <span className="font-medium">
-                      {selected.size} line{selected.size > 1 ? "s" : ""} selected
-                    </span>
-                    <select
-                      className="rounded-md border border-zinc-200 bg-white px-1.5 py-1 text-xs"
-                      value=""
-                      aria-label="Move selected charges to folio"
-                      onChange={(e) => {
-                        const to = e.target.value
-                        if (!to) return
-                        act(async () => {
-                          await call("kamra.api.transfer_folio_charges", {
-                            from_folio: folio.name,
-                            charge_rows: [...selected],
-                            to_folio: to,
-                          })
-                          setSelected(new Set())
+                {open && selected.size > 0 && (() => {
+                  const sel = folio.charges.filter((c) => selected.has(c.name))
+                  const selTotal = sel.reduce((s, c) => s + (c.total || 0), 0)
+                  const one = sel.length === 1 ? sel[0] : null
+                  const v = partVal.trim()
+                  const isPct = v.endsWith("%")
+                  const num = Number(v.replace("%", ""))
+                  const partOk =
+                    !!one && !!v && num > 0 &&
+                    (isPct ? num < 100 : num < (one.amount || 0))
+                  const partBad = !!one && !!v && !partOk
+                  const movedTotal = !one || !partOk
+                    ? selTotal
+                    : isPct
+                      ? ((one.total || 0) * num) / 100
+                      : num * (1 + (one.gst_rate || 0) / 100)
+                  const moveTo = (to: string) =>
+                    act(async () => {
+                      if (one && partOk) {
+                        await call("kamra.api.split_folio_charge", {
+                          from_folio: folio.name,
+                          charge_row: one.name,
+                          to_folio: to,
+                          percent: isPct ? num : null,
+                          amount: isPct ? null : num,
                         })
-                      }}
-                    >
-                      <option value="">Move all to…</option>
-                      {targets.map((s) => (
-                        <option key={s.name} value={s.name}>
-                          → {folioLabel(siblings, s)}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      className="text-xs text-zinc-400 hover:text-zinc-700"
-                      onClick={() => setSelected(new Set())}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
+                      } else {
+                        await call("kamra.api.transfer_folio_charges", {
+                          from_folio: folio.name,
+                          charge_rows: [...selected],
+                          to_folio: to,
+                        })
+                      }
+                      setSelected(new Set())
+                      setPartVal("")
+                    })
+                  const moveToNew = (type: "Extra" | "Company") =>
+                    act(async () => {
+                      const r = await call<{ folio: string }>(
+                        "kamra.api.split_folio",
+                        { reservation: data.stay.reservation, folio_type: type },
+                      )
+                      if (one && partOk) {
+                        await call("kamra.api.split_folio_charge", {
+                          from_folio: folio.name,
+                          charge_row: one.name,
+                          to_folio: r.folio,
+                          percent: isPct ? num : null,
+                          amount: isPct ? null : num,
+                        })
+                      } else {
+                        await call("kamra.api.transfer_folio_charges", {
+                          from_folio: folio.name,
+                          charge_rows: [...selected],
+                          to_folio: r.folio,
+                        })
+                      }
+                      setSelected(new Set())
+                      setPartVal("")
+                    })
+                  return (
+                    <div className="mb-3 rounded-xl border border-brand-200 bg-brand-50/40 p-3 text-sm print:hidden">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">
+                          {sel.length} line{sel.length > 1 ? "s" : ""} · ₹
+                          {inr(selTotal)} selected
+                        </span>
+                        {one && (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-600">
+                            <span>· move only</span>
+                            <input
+                              className="w-24 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
+                              aria-label="Part to move (percent, or ₹ before GST)"
+                              placeholder="30% or 1500"
+                              value={partVal}
+                              onChange={(e) => setPartVal(e.target.value)}
+                            />
+                            <span className="text-zinc-400">
+                              (₹ = before GST)
+                            </span>
+                          </span>
+                        )}
+                        <button
+                          className="ml-auto text-xs text-zinc-400 hover:text-zinc-700"
+                          onClick={() => {
+                            setSelected(new Set())
+                            setPartVal("")
+                          }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      {partBad && (
+                        <p className="mt-1.5 text-xs text-rose-600">
+                          Enter 1–99%, or a ₹ amount under the line's ₹
+                          {inr(one!.amount)} (before GST).
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-zinc-500">
+                          Send ₹{inr(movedTotal)} to
+                        </span>
+                        {targets.map((s) => (
+                          <button
+                            key={s.name}
+                            className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs hover:border-brand-400 disabled:opacity-50"
+                            disabled={busy || partBad}
+                            onClick={() => moveTo(s.name)}
+                          >
+                            <span className="font-medium">
+                              {folioLabel(siblings, s)}
+                            </span>
+                            <span
+                              className={
+                                s.balance > 0
+                                  ? "ml-1.5 text-amber-600"
+                                  : "ml-1.5 text-zinc-400"
+                              }
+                            >
+                              owes ₹{inr(s.balance)}
+                            </span>
+                          </button>
+                        ))}
+                        <button
+                          className="rounded-lg border border-dashed border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-600 hover:border-brand-400 disabled:opacity-50"
+                          disabled={busy || partBad}
+                          onClick={() => moveToNew("Company")}
+                        >
+                          + New Company folio
+                        </button>
+                        <button
+                          className="rounded-lg border border-dashed border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-600 hover:border-brand-400 disabled:opacity-50"
+                          disabled={busy || partBad}
+                          onClick={() => moveToNew("Extra")}
+                        >
+                          + New Extra folio
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
                 <table className="mb-5 w-full text-sm">
                   <thead>
                     <tr className="border-b border-zinc-200 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
-                      {routable && (
+                      {open && (
                         <th className="w-6 py-2 pr-2 print:hidden" aria-label="Select" />
                       )}
                       <th className="py-2 pr-3">Date</th>
@@ -600,7 +703,7 @@ export default function FolioView() {
                     {folio.charges.map((c, i) => (
                       <Fragment key={c.name ?? i}>
                         <tr>
-                          {routable && (
+                          {open && (
                             <td className="py-2 pr-2 print:hidden">
                               <input
                                 type="checkbox"
@@ -658,122 +761,23 @@ export default function FolioView() {
                                   <button
                                     aria-label="Void this charge"
                                     className="mr-1.5 inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:border-rose-400 hover:text-rose-700"
-                                    onClick={() => {
-                                      setVoidFor(c.name)
-                                      setRouteFor(null)
-                                    }}
+                                    onClick={() => setVoidFor(c.name)}
                                   >
                                     <Trash2 className="size-3" aria-hidden />
                                     Void
                                   </button>
                                 ))}
-                              {routable && (
-                              <>
-                              <button
-                                aria-label="Route this charge"
-                                className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:border-brand-400 hover:text-zinc-800"
-                                onClick={() => {
-                                  setRouteFor(routeFor === c.name ? null : c.name)
-                                  setVoidFor(null)
-                                  setSplitTarget(targets[0]?.name ?? "")
-                                  setSplitVal("")
-                                }}
-                              >
-                                <ArrowRightLeft className="size-3" aria-hidden />
-                                Route
-                              </button>
-                              {routeFor === c.name && (
-                                <div className="absolute right-0 z-30 mt-1 w-72 rounded-xl border border-zinc-200 bg-white p-3 text-left shadow-xl">
-                                  <div className="mb-1.5 text-xs font-medium text-zinc-500">
-                                    Move all ₹{inr(c.total)} to
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {targets.map((s) => (
-                                      <button
-                                        key={s.name}
-                                        className="rounded-md border border-zinc-200 px-2 py-1 text-xs hover:border-brand-400 hover:bg-zinc-50"
-                                        onClick={() =>
-                                          act(async () => {
-                                            await call(
-                                              "kamra.api.transfer_folio_charge",
-                                              {
-                                                from_folio: folio.name,
-                                                charge_row: c.name,
-                                                to_folio: s.name,
-                                              },
-                                            )
-                                            setRouteFor(null)
-                                          })
-                                        }
-                                      >
-                                        {folioLabel(siblings, s)}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <div className="my-2.5 border-t border-zinc-100" />
-                                  <div className="mb-1.5 text-xs font-medium text-zinc-500">
-                                    Or split a part
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <input
-                                      className="w-24 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
-                                      aria-label="Split share (percent or amount)"
-                                      placeholder="30% or 1500"
-                                      value={splitVal}
-                                      onChange={(e) => setSplitVal(e.target.value)}
-                                    />
-                                    <span className="text-xs text-zinc-400">to</span>
-                                    <select
-                                      className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-xs"
-                                      aria-label="Split target folio"
-                                      value={splitTarget}
-                                      onChange={(e) => setSplitTarget(e.target.value)}
-                                    >
-                                      {targets.map((s) => (
-                                        <option key={s.name} value={s.name}>
-                                          {folioLabel(siblings, s)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div className="mt-2.5 flex items-center justify-end gap-2">
-                                    <button
-                                      className="text-xs text-zinc-400 hover:text-zinc-700"
-                                      onClick={() => setRouteFor(null)}
-                                    >
-                                      Cancel
-                                    </button>
-                                    <Button
-                                      variant="outline"
-                                      disabled={
-                                        busy || !splitTarget || !splitVal.trim()
-                                      }
-                                      onClick={() => {
-                                        const v = splitVal.trim()
-                                        const isPct = v.endsWith("%")
-                                        const num = Number(v.replace("%", ""))
-                                        if (!num || num <= 0) return
-                                        act(async () => {
-                                          await call(
-                                            "kamra.api.split_folio_charge",
-                                            {
-                                              from_folio: folio.name,
-                                              charge_row: c.name,
-                                              to_folio: splitTarget,
-                                              percent: isPct ? num : null,
-                                              amount: isPct ? null : num,
-                                            },
-                                          )
-                                          setRouteFor(null)
-                                        })
-                                      }}
-                                    >
-                                      Split
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-                              </>
+                              {open && !selected.has(c.name) && (
+                                <button
+                                  aria-label="Move or split this charge"
+                                  className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 hover:border-brand-400 hover:text-zinc-800"
+                                  onClick={() =>
+                                    setSelected((prev) => new Set(prev).add(c.name))
+                                  }
+                                >
+                                  <ArrowRightLeft className="size-3" aria-hidden />
+                                  Move
+                                </button>
                               )}
                             </td>
                           )}

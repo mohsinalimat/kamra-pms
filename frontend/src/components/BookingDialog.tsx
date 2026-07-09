@@ -320,6 +320,46 @@ export function BookingDialog(props: {
       (selectedRt.children_capacity > 0 &&
         form.children > selectedRt.children_capacity))
 
+  // rooms needed to sleep the whole party in this room type, keeping at
+  // least one adult in every room
+  const roomsNeeded = (() => {
+    if (!selectedRt) return 1
+    const capA = selectedRt.adults_capacity || form.adults || 1
+    const capC = selectedRt.children_capacity
+    const n = Math.max(
+      Math.ceil(form.adults / Math.max(1, capA)),
+      capC > 0 ? Math.ceil(form.children / capC) : 1,
+      1,
+    )
+    return Math.min(n, Math.max(1, form.adults))
+  })()
+
+  const distributeParty = () => {
+    // spread the party as evenly as possible; the lot books as one group
+    const n = roomsNeeded
+    const baseA = Math.floor(form.adults / n)
+    const remA = form.adults % n
+    const baseC = Math.floor(form.children / n)
+    const remC = form.children % n
+    const alloc = Array.from({ length: n }, (_, i) => ({
+      adults: baseA + (i < remA ? 1 : 0),
+      children: baseC + (i < remC ? 1 : 0),
+    }))
+    setForm((f) => ({
+      ...f,
+      adults: alloc[0].adults,
+      children: alloc[0].children,
+    }))
+    setMoreRooms(
+      alloc.slice(1).map((a) => ({
+        room_type: form.room_type,
+        adults: a.adults,
+        children: a.children,
+        meal_plan: form.meal_plan,
+      })),
+    )
+  }
+
   return (
     <div
       className="fixed inset-0 z-50"
@@ -539,19 +579,9 @@ export function BookingDialog(props: {
                     it books as one group.{" "}
                     <button
                       className="font-semibold text-brand-700 hover:underline"
-                      onClick={() =>
-                        setMoreRooms((rs) => [
-                          ...rs,
-                          {
-                            room_type: form.room_type,
-                            adults: 2,
-                            children: 0,
-                            meal_plan: form.meal_plan,
-                          },
-                        ])
-                      }
+                      onClick={distributeParty}
                     >
-                      Add a room
+                      Split into {roomsNeeded} rooms
                     </button>
                   </div>
                 ) : (
