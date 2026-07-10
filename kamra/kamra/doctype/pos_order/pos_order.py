@@ -8,11 +8,14 @@ from frappe.utils import nowdate
 
 class POSOrder(Document):
 	def validate(self):
-		total = 0.0
+		subtotal = 0.0
 		for it in self.items:
 			it.amount = float(it.qty or 1) * float(it.rate or 0)
-			total += it.amount
-		self.order_total = total
+			subtotal += it.amount
+		self.subtotal = subtotal
+		discount = min(float(self.discount_amount or 0), subtotal)
+		self.discount_amount = discount
+		self.order_total = subtotal - discount
 
 	def on_update(self):
 		previous = self.get_doc_before_save()

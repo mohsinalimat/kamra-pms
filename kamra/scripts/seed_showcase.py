@@ -59,6 +59,31 @@ VENUES = [
 ]
 
 
+# POS: (outlet_name, outlet_type, gst%, [ (item, category, price, veg, station, img) ])
+POS = [
+	("The Terrace Restaurant", "Restaurant", 5, [
+		("Masala Dosa", "South Indian", 220, 1, "Kitchen",
+		 "https://images.unsplash.com/photo-1630383249896-424e482df921?w=400"),
+		("Butter Chicken", "North Indian", 480, 0, "Kitchen",
+		 "https://images.unsplash.com/photo-1603894584373-5ac82b2ae398?w=400"),
+		("Paneer Tikka", "Starters", 360, 1, "Kitchen",
+		 "https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=400"),
+		("Veg Biryani", "Rice", 340, 1, "Kitchen",
+		 "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=400"),
+		("Gulab Jamun", "Desserts", 160, 1, "Kitchen",
+		 "https://images.unsplash.com/photo-1666190092159-3171cf0fbb12?w=400"),
+	]),
+	("Poolside Bar", "Bar", 18, [
+		("Cold Coffee", "Beverages", 180, 1, "Bar",
+		 "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=400"),
+		("Fresh Lime Soda", "Beverages", 120, 1, "Bar",
+		 "https://images.unsplash.com/photo-1523371054106-bbf80586c33c?w=400"),
+		("Kingfisher Beer", "Alcohol", 350, 1, "Bar",
+		 "https://images.unsplash.com/photo-1608270586620-248524c67de9?w=400"),
+	]),
+]
+
+
 def execute():
 	if not frappe.db.exists("Property", PROPERTY):
 		print(f"Property '{PROPERTY}' not found — run seed_demo first.")
@@ -97,6 +122,27 @@ def execute():
 		}).insert(ignore_permissions=True)
 		added_venue += 1
 
+	added_outlet = added_item = 0
+	for oname, otype, gst, items in POS:
+		outlet = frappe.db.get_value(
+			"POS Outlet", {"property": PROPERTY, "outlet_name": oname})
+		if not outlet:
+			outlet = frappe.get_doc({
+				"doctype": "POS Outlet", "property": PROPERTY,
+				"outlet_name": oname, "outlet_type": otype, "gst_rate": gst,
+			}).insert(ignore_permissions=True).name
+			added_outlet += 1
+		for item, cat, price, veg, station, img in items:
+			if frappe.db.exists("Menu Item", {"outlet": outlet, "item_name": item}):
+				continue
+			frappe.get_doc({
+				"doctype": "Menu Item", "property": PROPERTY, "outlet": outlet,
+				"item_name": item, "category": cat, "price": price,
+				"is_veg": veg, "available": 1, "prep_station": station,
+				"is_alcohol": 1 if cat == "Alcohol" else 0, "image": img,
+			}).insert(ignore_permissions=True)
+			added_item += 1
+
 	frappe.db.commit()
-	print(f"Showcase seed: +{added_exp} experiences, +{added_venue} venues "
-	      f"on '{PROPERTY}'.")
+	print(f"Showcase seed: +{added_exp} experiences, +{added_venue} venues, "
+	      f"+{added_outlet} outlets, +{added_item} menu items on '{PROPERTY}'.")

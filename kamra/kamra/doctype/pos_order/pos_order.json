@@ -22,7 +22,13 @@
   "order_total",
   "column_break_b",
   "posted_to_folio",
-  "notes"
+  "notes",
+  "captain",
+  "table_no",
+  "discount_amount",
+  "discount_reason",
+  "kot_fired",
+  "subtotal"
  ],
  "fields": [
   {
@@ -52,7 +58,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Placed\nPreparing\nDelivered\nCancelled"
+   "options": "Placed\nConfirmed\nPreparing\nDelivered\nCancelled"
   },
   {
    "default": "Manual",
@@ -119,6 +125,40 @@
    "fieldname": "notes",
    "fieldtype": "Small Text",
    "label": "Notes"
+  },
+  {
+   "fieldname": "captain",
+   "fieldtype": "Link",
+   "label": "Captain",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "table_no",
+   "fieldtype": "Data",
+   "label": "Table"
+  },
+  {
+   "fieldname": "discount_amount",
+   "fieldtype": "Currency",
+   "label": "Discount"
+  },
+  {
+   "fieldname": "discount_reason",
+   "fieldtype": "Data",
+   "label": "Discount Reason"
+  },
+  {
+   "fieldname": "kot_fired",
+   "fieldtype": "Check",
+   "label": "KOT Fired",
+   "read_only": 1
+  },
+  {
+   "fieldname": "subtotal",
+   "fieldtype": "Currency",
+   "label": "Subtotal",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

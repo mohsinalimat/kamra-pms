@@ -640,6 +640,43 @@ def t24():
 		frappe.set_user("Administrator")
 
 
+@check("POS: order fires KOT, delivery posts F&B to the room folio with discount")
+def t25():
+	from kamra import pos
+	from kamra.folio import post_room_night
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Cafe",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	mi = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Dosa", "category": "Food", "price": 200,
+		"is_veg": 1, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+	g = _guest("Eval POS", "+91 70000 00025")
+	res = _res(g, "2034-01-01", "2034-01-02", ROOM)
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"})
+	base = frappe.get_doc("Folio", folio).grand_total
+
+	o = pos.create_order(outlet, [{"menu_item": mi, "qty": 2, "instructions": "hot"}],
+	                     room=ROOM)
+	assert o["order_total"] == 400, o["order_total"]
+	pos.apply_discount(o["order"], 50, "regular")
+	pos.confirm_order(o["order"])
+	pos.fire_kot(o["order"])
+	kq = pos.kitchen_queue(P)
+	assert any(row["name"] == o["order"] for row in kq), "order not on kitchen queue"
+	pos.mark_prepared(o["order"])
+	out = pos.deliver_order(o["order"])
+	assert out["posted_to_folio"], "delivered order did not post to folio"
+	fd = frappe.get_doc("Folio", folio)
+	# 350 net (400-50) + 5% F&B GST = 367.50 added
+	assert round(fd.grand_total - base, 2) == 367.50, fd.grand_total - base
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -662,7 +699,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

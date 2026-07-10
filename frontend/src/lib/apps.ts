@@ -116,6 +116,7 @@ export const APPS: AppDef[] = [
     roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
     items: [
       { to: "/tickets", label: "Guest Requests", icon: Ticket },
+      { to: "/pos", label: "Restaurant POS", icon: UtensilsCrossed },
       { to: "/ops-sla", label: "SLA Report", icon: AlarmClock },
       { to: "/shifts", label: "Shifts", icon: Clock },
     ],

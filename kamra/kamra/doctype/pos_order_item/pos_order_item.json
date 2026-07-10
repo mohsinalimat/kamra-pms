@@ -11,7 +11,9 @@
   "item_name",
   "qty",
   "rate",
-  "amount"
+  "amount",
+  "instructions",
+  "kot_status"
  ],
  "fields": [
   {
@@ -49,6 +51,19 @@
    "in_list_view": 1,
    "label": "Amount",
    "read_only": 1
+  },
+  {
+   "fieldname": "instructions",
+   "fieldtype": "Data",
+   "label": "Instructions",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "kot_status",
+   "fieldtype": "Select",
+   "label": "KOT",
+   "options": "New\nFired\nPrepared",
+   "default": "New"
   }
  ],
  "grid_page_length": 50,
