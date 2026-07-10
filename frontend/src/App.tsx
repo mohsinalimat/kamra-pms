@@ -36,6 +36,7 @@ import Reports from "./screens/Reports"
 import RevenueReports from "./screens/RevenueReports"
 import OpsSLA from "./screens/OpsSLA"
 import Dashboard from "./screens/Dashboard"
+import CRS from "./screens/CRS"
 import AccountingExport from "./screens/AccountingExport"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
@@ -256,6 +257,7 @@ export default function App() {
           <Route path="revenue-reports" element={<RevenueReports />} />
           <Route path="ops-sla" element={<OpsSLA />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="crs" element={<CRS />} />
           <Route path="accounting-export" element={<AccountingExport />} />
           <Route path="tickets" element={<Tickets />} />
           <Route

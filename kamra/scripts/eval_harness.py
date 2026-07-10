@@ -602,6 +602,44 @@ def t23():
 	assert d.escalation_level == 2, d.escalation_level
 
 
+@check("CRS access guard: a property-restricted user is blocked from others")
+def t24():
+	from kamra.crs import assert_property_access, permitted_properties
+	u = "eval.pinned@kamra.local"
+	if not frappe.db.exists("User", u):
+		frappe.get_doc({
+			"doctype": "User", "email": u, "first_name": "Pinned",
+			"send_welcome_email": 0, "roles": [{"role": "Front Desk"}],
+		}).insert(ignore_permissions=True)
+	if not frappe.db.exists("User Permission",
+	                        {"user": u, "allow": "Property", "for_value": P}):
+		frappe.get_doc({
+			"doctype": "User Permission", "user": u,
+			"allow": "Property", "for_value": P,
+		}).insert(ignore_permissions=True)
+	frappe.set_user(u)
+	try:
+		assert permitted_properties() == {P}, permitted_properties()
+		assert_property_access(P)  # the one they're allowed
+		try:
+			assert_property_access("Some Other Hotel XYZ")
+			raise AssertionError("guard let a restricted user reach another property")
+		except frappe.PermissionError:
+			pass
+		# and they can't create a booking at a property they can't see
+		from kamra import api
+		try:
+			api.create_booking(
+				property="Some Other Hotel XYZ", room_type="x",
+				check_in_date="2035-01-01", check_out_date="2035-01-02",
+				guest_name="Nope", phone="+91 70000 09999")
+			raise AssertionError("booked at an off-limits property")
+		except frappe.PermissionError:
+			pass
+	finally:
+		frappe.set_user("Administrator")
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -624,7 +662,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

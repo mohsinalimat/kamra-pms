@@ -64,6 +64,8 @@ def _finance_slice(property: str, date: str):
 @require_roles("Front Desk", "Finance", "Revenue Manager", "Hotel Admin", "Kamra Agent")
 def property_dashboard(property: str, date: str | None = None):
 	"""Everything one hotel's dashboard needs, by department."""
+	from kamra.crs import assert_property_access
+	assert_property_access(property)
 	date = date or nowdate()
 	from kamra.reports import manager_flash
 	flash = manager_flash(property, date)

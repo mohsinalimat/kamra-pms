@@ -2298,6 +2298,8 @@ def create_booking(property: str, room_type: str, check_in_date: str,
 
 	waitlist=1 parks the stay with no room and status Waitlist - for dates
 	that are sold out or restricted; promote it later when a room frees."""
+	from kamra.crs import assert_property_access
+	assert_property_access(property)
 	if guest:
 		if not frappe.db.exists("Guest", guest):
 			frappe.throw(f"Guest profile {guest} not found.")
