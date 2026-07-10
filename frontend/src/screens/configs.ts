@@ -501,3 +501,50 @@ export const groupsConfig: ScreenConfig = {
   ],
   detailPanel: GroupControl,
 }
+
+export const outletsConfig: ScreenConfig = {
+  doctype: "POS Outlet",
+  title: "Outlets",
+  description: "Restaurants, bars and other points of sale.",
+  propertyScoped: true,
+  columns: [
+    { field: "outlet_name", label: "Outlet" },
+    { field: "outlet_type", label: "Type", badge: true },
+    { field: "gst_rate", label: "GST %" },
+  ],
+  form: [
+    { field: "outlet_name", label: "Outlet name", type: "data", required: true },
+    { field: "outlet_type", label: "Type", type: "select", options: ["Restaurant", "Room Service", "Bar", "Spa", "Other"] },
+    { field: "gst_rate", label: "GST %", type: "float" },
+    { field: "disabled", label: "Disabled", type: "check" },
+  ],
+}
+
+export const menuItemsConfig: ScreenConfig = {
+  doctype: "Menu Item",
+  title: "Menu",
+  description: "Dishes and drinks across your outlets - photo, price, veg/non-veg.",
+  searchFields: ["item_name", "category"],
+  pageSize: 50,
+  propertyScoped: true,
+  orderBy: "category, item_name",
+  columns: [
+    { field: "item_name", label: "Item" },
+    { field: "outlet", label: "Outlet" },
+    { field: "category", label: "Category" },
+    { field: "price", label: "Price" },
+    { field: "available", label: "Available", badge: true },
+  ],
+  form: [
+    { field: "outlet", label: "Outlet", type: "link", linkDoctype: "POS Outlet", required: true },
+    { field: "item_name", label: "Item name", type: "data", required: true },
+    { field: "category", label: "Category", type: "data" },
+    { field: "price", label: "Price", type: "currency", required: true },
+    { field: "image", label: "Photo URL", type: "data" },
+    { field: "description", label: "Description", type: "data" },
+    { field: "prep_station", label: "Prep station", type: "select", options: ["Kitchen", "Bar"] },
+    { field: "is_veg", label: "Vegetarian", type: "check" },
+    { field: "is_alcohol", label: "Alcohol", type: "check" },
+    { field: "available", label: "Available", type: "check" },
+  ],
+}

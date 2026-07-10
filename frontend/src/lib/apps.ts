@@ -116,10 +116,22 @@ export const APPS: AppDef[] = [
     roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
     items: [
       { to: "/tickets", label: "Guest Requests", icon: Ticket },
-      { to: "/pos", label: "Restaurant POS", icon: UtensilsCrossed },
-      { to: "/kitchen", label: "Kitchen Display", icon: ConciergeBell },
       { to: "/ops-sla", label: "SLA Report", icon: AlarmClock },
       { to: "/shifts", label: "Shifts", icon: Clock },
+    ],
+  },
+  {
+    id: "fnb",
+    name: "F&B",
+    icon: UtensilsCrossed,
+    tint: "bg-orange-50 text-orange-700",
+    description: "Restaurant POS, kitchen display and the menu.",
+    roles: ["Front Desk", "Finance", "Hotel Admin", "System Manager", "Administrator"],
+    items: [
+      { to: "/pos", label: "Restaurant POS", icon: UtensilsCrossed },
+      { to: "/kitchen", label: "Kitchen Display", icon: ConciergeBell },
+      { to: "/menu-items", label: "Menu", icon: ClipboardList },
+      { to: "/outlets", label: "Outlets", icon: Store },
     ],
   },
   {
