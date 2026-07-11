@@ -202,7 +202,8 @@ doc_events = {
 		"on_trash": "kamra.realtime.notify",
 	}
 	for doctype in ("Reservation", "Folio", "Room", "Housekeeping Task",
-	                "Venue Booking", "Group Booking")
+	                "Venue Booking", "Group Booking", "POS Order",
+	                "Service Ticket")
 }
 
 # Scheduled Tasks

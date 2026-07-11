@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { ChefHat, Check, RefreshCw, Clock } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
+import { subscribeRealtime } from "../lib/realtime"
 import { Button } from "../components/ui/button"
 import { cn } from "../lib/utils"
 
@@ -47,8 +48,11 @@ export default function Kitchen() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 10_000)
-    return () => clearInterval(t)
+    // live: re-fetch the moment an order fires or a line is marked ready
+    // (socket via subscribeRealtime, with its own polling fallback)
+    const unsub = subscribeRealtime(load)
+    const t = setInterval(load, 15_000) // safety net
+    return () => { unsub(); clearInterval(t) }
   }, [load])
 
   async function prepared(order: string, item?: string) {

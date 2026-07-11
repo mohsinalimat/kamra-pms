@@ -4,6 +4,7 @@ import {
   Maximize2, Minimize2, Wallet, ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
+import { subscribeRealtime } from "../lib/realtime"
 import { serverError } from "../lib/resource"
 import { Button } from "../components/ui/button"
 
@@ -101,8 +102,9 @@ export default function POS() {
   }, [outlet])
   useEffect(() => {
     loadOpen()
-    const t = setInterval(loadOpen, 15_000)
-    return () => clearInterval(t)
+    const unsub = subscribeRealtime(loadOpen) // live tabs across captains
+    const t = setInterval(loadOpen, 20_000)
+    return () => { unsub(); clearInterval(t) }
   }, [loadOpen])
 
   function newOrder() {

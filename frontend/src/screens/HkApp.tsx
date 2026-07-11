@@ -7,6 +7,7 @@ import {
   logout,
   whoami,
 } from "../lib/api"
+import { subscribeRealtime } from "../lib/realtime"
 import { Badge } from "../components/ui/badge"
 import { cn } from "../lib/utils"
 import { asset } from "../lib/asset"
@@ -84,8 +85,9 @@ export default function HkApp() {
   useEffect(() => {
     if (auth !== "ok") return
     load()
-    const t = setInterval(load, 20_000)
-    return () => clearInterval(t)
+    const unsub = subscribeRealtime(load) // live room/task updates
+    const t = setInterval(load, 20_000) // safety net
+    return () => { unsub(); clearInterval(t) }
   }, [auth, load])
 
   async function run(task: string, method: string, params: Record<string, unknown> = {}) {
