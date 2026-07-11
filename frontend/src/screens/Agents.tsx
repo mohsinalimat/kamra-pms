@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
+import { useRealtime } from "../lib/realtime"
 import Assistant from "./Assistant"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
@@ -770,8 +771,8 @@ export function ActivityTab({ property }: { property: string }) {
       .catch(() => setDetail(null))
   }
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true)
     call<ActivityRow[]>("kamra.agents_api.activity_feed", {
       property,
       actor_kind: kind || null,
@@ -783,8 +784,11 @@ export function ActivityTab({ property }: { property: string }) {
         setError(null)
       })
       .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false))
+      .finally(() => { if (!silent) setLoading(false) })
   }, [property, kind, page])
+
+  // live audit stream: refetch silently on any change (no loading flash)
+  useRealtime(useCallback(() => load(true), [load]))
 
   useEffect(() => {
     load()

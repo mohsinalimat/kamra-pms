@@ -203,7 +203,7 @@ doc_events = {
 	}
 	for doctype in ("Reservation", "Folio", "Room", "Housekeeping Task",
 	                "Venue Booking", "Group Booking", "POS Order",
-	                "Service Ticket")
+	                "Service Ticket", "Agent Action Log")
 }
 
 # Scheduled Tasks

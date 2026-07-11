@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { useRealtime } from "../lib/realtime"
 import {
   BedDouble, LogIn, LogOut, Users, IndianRupee, Wallet,
   Building2, Sparkles, Brush, Receipt,
@@ -115,6 +116,7 @@ export default function Dashboard() {
     }
   }, [scope])
   useEffect(load, [load])
+  useRealtime(load)
 
   return (
     <div className="space-y-5">

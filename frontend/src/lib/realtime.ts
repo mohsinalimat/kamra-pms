@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 /*  Live updates. Prefer Frappe's socket (nginx proxies /socket.io to the
     websocket service; the namespace is the site name = hostname). If the
     socket can't connect (e.g. the dev server), fall back to gentle polling
@@ -42,4 +43,11 @@ export function subscribeRealtime(onChange: () => void): () => void {
     socket.close()
     if (timer) clearInterval(timer)
   }
+}
+
+/** Hook: re-run `onChange` whenever something changes on the property.
+ * `onChange` should be stable (wrap in useCallback) so it doesn't
+ * re-subscribe each render. Updates happen in place - no remount. */
+export function useRealtime(onChange: () => void) {
+  useEffect(() => subscribeRealtime(onChange), [onChange])
 }

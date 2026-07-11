@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { Plus, Trash2 } from "lucide-react"
 
 import { call } from "../lib/api"
+import { useRealtime } from "../lib/realtime"
 import { listResource, serverError, type Row } from "../lib/resource"
 import LinkedRecords from "./LinkedRecords"
 import { Badge } from "./ui/badge"
@@ -100,6 +101,7 @@ export default function GroupControl({
       .catch((e) => setError(serverError(e)))
   }, [name])
   useEffect(load, [load])
+  useRealtime(load)
 
   useEffect(() => {
     listResource("Room Type", { fields: ["name"], limit: 50 })
