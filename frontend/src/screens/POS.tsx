@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   Plus, Minus, Trash2, Send, UtensilsCrossed, Leaf, Search,
-  Maximize2, Minimize2, Wallet,
+  Maximize2, Minimize2, Wallet, ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
 import { serverError } from "../lib/resource"
@@ -113,6 +113,16 @@ export default function POS() {
     const d = await call<Detail>("kamra.pos.order_detail", { order: name })
     setDetail(d)
   }
+  /** Step to the previous/next running order (wraps); from "New order" it
+   * enters the list at the first/last tab. */
+  function traverse(dir: 1 | -1) {
+    if (open.length === 0) return
+    const idx = selected === null ? -1 : open.findIndex((o) => o.name === selected)
+    const next = idx === -1
+      ? (dir === 1 ? 0 : open.length - 1)
+      : (idx + dir + open.length) % open.length
+    openTab(open[next].name)
+  }
 
   const addToCart = (it: MenuItem) =>
     setCart((c) => {
@@ -194,21 +204,40 @@ export default function POS() {
           </div>
         </div>
 
-        {/* running tabs - juggle several tables at once */}
-        <div className="flex flex-wrap gap-2">
-          <button onClick={newOrder}
-            className={"inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium " +
-              (selected === null ? "border-brand-600 bg-brand-600 text-white" : "border-dashed border-zinc-300 text-zinc-600 hover:border-brand-400")}>
-            <Plus className="size-4" />New order
+        {/* running tabs - step through several tables at once */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => traverse(-1)}
+            disabled={open.length === 0}
+            aria-label="Previous order"
+            className="shrink-0 rounded-lg border border-zinc-300 p-1.5 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40"
+          >
+            <ChevronLeft className="size-4" />
           </button>
-          {open.map((o) => (
-            <button key={o.name} onClick={() => openTab(o.name)}
-              className={"inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm " +
-                (selected === o.name ? "border-brand-600 bg-brand-50 font-semibold text-brand-700" : "border-zinc-200 bg-white hover:border-brand-400")}>
-              {o.label}
-              <span className="text-xs text-zinc-400">₹{inr(o.order_total)}</span>
+          <div className="flex flex-1 gap-2 overflow-x-auto pb-1">
+            <button onClick={newOrder}
+              className={"inline-flex shrink-0 items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium " +
+                (selected === null ? "border-brand-600 bg-brand-600 text-white" : "border-dashed border-zinc-300 text-zinc-600 hover:border-brand-400")}>
+              <Plus className="size-4" />New order
             </button>
-          ))}
+            {open.map((o) => (
+              <button key={o.name} ref={(el) => { if (selected === o.name && el) el.scrollIntoView({ block: "nearest", inline: "nearest" }) }}
+                onClick={() => openTab(o.name)}
+                className={"inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm " +
+                  (selected === o.name ? "border-brand-600 bg-brand-50 font-semibold text-brand-700" : "border-zinc-200 bg-white hover:border-brand-400")}>
+                {o.label}
+                <span className="text-xs text-zinc-400">₹{inr(o.order_total)}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => traverse(1)}
+            disabled={open.length === 0}
+            aria-label="Next order"
+            className="shrink-0 rounded-lg border border-zinc-300 p-1.5 text-zinc-500 hover:bg-zinc-50 disabled:opacity-40"
+          >
+            <ChevronRight className="size-4" />
+          </button>
         </div>
         {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
 
