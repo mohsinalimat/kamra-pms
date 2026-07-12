@@ -414,3 +414,47 @@ def qr_order(outlet: str, items, room: str | None = None,
 		frappe.set_user("Guest")
 	return {"ok": True, "order": out["order"], "order_total": out["order_total"],
 	        "message": "Order placed - a server will confirm it shortly."}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=10, seconds=3600)
+def hosting_enquiry(full_name: str, email: str, phone: str = "",
+                    property_name: str = "", rooms: int = 0, city: str = "",
+                    message: str = ""):
+	"""Kamra Cloud hosting enquiry from kamrapms.com. Stored first (a lead is
+	never lost even without SMTP), then a best-effort email to the team."""
+	if not (full_name or "").strip() or not (email or "").strip():
+		frappe.throw("Name and email are required.")
+	doc = frappe.get_doc({
+		"doctype": "Hosting Enquiry",
+		"full_name": full_name.strip()[:140],
+		"email": email.strip()[:140],
+		"phone": (phone or "").strip()[:40] or None,
+		"property_name": (property_name or "").strip()[:140] or None,
+		"rooms": int(rooms or 0),
+		"city": (city or "").strip()[:80] or None,
+		"message": (message or "").strip()[:2000] or None,
+		"status": "New",
+	})
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	try:
+		frappe.sendmail(
+			recipients=["hello@kamrapms.com"],
+			subject=f"Kamra Cloud enquiry: {doc.full_name}"
+			        + (f" ({doc.property_name})" if doc.property_name else ""),
+			message=(
+				f"<p><b>{doc.full_name}</b> &lt;{doc.email}&gt;"
+				+ (f" · {doc.phone}" if doc.phone else "") + "</p>"
+				+ (f"<p>Property: {doc.property_name}"
+				   + (f", {doc.rooms} rooms" if doc.rooms else "")
+				   + (f", {doc.city}" if doc.city else "") + "</p>"
+				   if doc.property_name else "")
+				+ (f"<p>{doc.message}</p>" if doc.message else "")
+				+ f"<p>Ref: {doc.name}</p>"
+			),
+		)
+	except Exception:
+		pass  # no SMTP yet - the enquiry is already saved
+	return {"ok": True,
+	        "message": "Thanks - we'll get back to you within a day."}
