@@ -23,10 +23,17 @@ allowances, part-settlement, invoice cancellation with a register;
 ## F&B — POS and kitchen
 
 Outlet-based restaurant POS with a photo menu, per-item instructions and
-guest discounts; captains juggle several running tables at once; a live
-**kitchen display** (per outlet, Kitchen/Bar stations, colour-aged
-tickets); guests scan a **QR menu** to order — a captain confirms before
-anything fires; delivered room-service posts straight to the folio.
+guest discounts. The captain works from a colour-coded **table map**
+(vacant / running / in kitchen / ready) and can juggle several running
+bills at once — dine-in, room service and takeaway. Firing a KOT stamps a
+daily **KOT number** and prints an **80mm thermal ticket** (KDS-only
+kitchens can turn printing off); a live **kitchen display** per outlet
+(Kitchen/Bar stations, colour-aged tickets) runs alongside. Bills print on
+thermal with the CGST/SGST split; walk-ins **settle by cash/card/UPI** at
+the outlet while room-service posts straight to the folio. Line voids and
+order cancellations require a reason, so the KOT-vs-bill audit holds up.
+Guests scan a **QR menu** to order — a captain confirms before anything
+fires.
 
 ## Housekeeping
 

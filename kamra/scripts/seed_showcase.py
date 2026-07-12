@@ -124,14 +124,20 @@ def execute():
 
 	added_outlet = added_item = 0
 	for oname, otype, gst, items in POS:
+		# dine-in outlets get a table layout so the POS table map lights up
+		tables = ("\n".join(f"T{i}" for i in range(1, 13))
+		          if otype in ("Restaurant", "Bar") else None)
 		outlet = frappe.db.get_value(
 			"POS Outlet", {"property": PROPERTY, "outlet_name": oname})
 		if not outlet:
 			outlet = frappe.get_doc({
 				"doctype": "POS Outlet", "property": PROPERTY,
 				"outlet_name": oname, "outlet_type": otype, "gst_rate": gst,
+				"tables": tables,
 			}).insert(ignore_permissions=True).name
 			added_outlet += 1
+		elif tables and not frappe.db.get_value("POS Outlet", outlet, "tables"):
+			frappe.db.set_value("POS Outlet", outlet, "tables", tables)
 		for item, cat, price, veg, station, img in items:
 			if frappe.db.exists("Menu Item", {"outlet": outlet, "item_name": item}):
 				continue

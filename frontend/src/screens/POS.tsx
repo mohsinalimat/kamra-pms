@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   Plus, Minus, Trash2, Send, UtensilsCrossed, Leaf, Search,
   Maximize2, Minimize2, Wallet, ChevronLeft, ChevronRight,
+  Printer, Receipt, XCircle, Ban,
 } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
 import { subscribeRealtime } from "../lib/realtime"
 import { serverError } from "../lib/resource"
+import { printThermal, kotHtml, billHtml, type BillData } from "../lib/thermal"
 import { Button } from "../components/ui/button"
 
 const inr = (n: unknown) =>
@@ -26,7 +28,18 @@ interface OpenOrder {
   status: string
   order_total: number
   items: number
+  pending: number
   kot_fired: number
+  kot_no: number | null
+  order_type: string | null
+}
+interface TableTile {
+  table: string
+  state: "vacant" | "running" | "fired" | "ready"
+  order?: string
+  order_total?: number
+  items?: number
+  kot_no?: number | null
 }
 interface CartLine {
   menu_item: string
@@ -43,16 +56,31 @@ interface OrderItem {
   amount: number
   instructions: string | null
   kot_status: string
+  voided: number
 }
 interface Detail {
   name: string
   status: string
   table_no: string | null
   room: string | null
+  order_type: string | null
+  kot_no: number | null
+  paid: number
+  payment_mode: string | null
   discount_amount: number
   subtotal: number
   order_total: number
   items: OrderItem[]
+}
+
+type OrderType = "Dine In" | "Room Service" | "Takeaway"
+const ORDER_TYPES: OrderType[] = ["Dine In", "Room Service", "Takeaway"]
+
+const TILE: Record<TableTile["state"], string> = {
+  vacant: "border-dashed border-zinc-300 bg-white text-zinc-500 hover:border-brand-400 hover:text-brand-700",
+  running: "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-400",
+  fired: "border-sky-300 bg-sky-50 text-sky-900 hover:border-sky-400",
+  ready: "border-emerald-300 bg-emerald-50 text-emerald-900 hover:border-emerald-400",
 }
 
 const inputCls =
@@ -67,12 +95,20 @@ export default function POS() {
   const [cats, setCats] = useState<{ category: string; items: MenuItem[] }[]>([])
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState<OpenOrder[]>([])
+  const [tables, setTables] = useState<TableTile[]>([])
   const [selected, setSelected] = useState<string | null>(null) // null = new order
   const [detail, setDetail] = useState<Detail | null>(null)
+  const [orderType, setOrderType] = useState<OrderType>("Dine In")
   const [room, setRoom] = useState("")
   const [table, setTable] = useState("")
   const [cart, setCart] = useState<CartLine[]>([]) // new lines (new order OR next round)
   const [discount, setDiscount] = useState("")
+  const [printKot, setPrintKot] = useState(() => localStorage.getItem("pos_print_kot") !== "0")
+  const [settling, setSettling] = useState(false)
+  const [voiding, setVoiding] = useState<OrderItem | null>(null)
+  const [voidReason, setVoidReason] = useState("")
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelReason, setCancelReason] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [full, setFull] = useState(false)
@@ -89,6 +125,8 @@ export default function POS() {
     return () => document.removeEventListener("fullscreenchange", onFs)
   }, [])
 
+  useEffect(() => { localStorage.setItem("pos_print_kot", printKot ? "1" : "0") }, [printKot])
+
   const loadMenu = useCallback(() => {
     if (!outlet) return
     call<{ categories: { category: string; items: MenuItem[] }[] }>("kamra.pos.pos_menu", { outlet })
@@ -99,20 +137,33 @@ export default function POS() {
   const loadOpen = useCallback(() => {
     if (!outlet) return
     call<OpenOrder[]>("kamra.pos.open_orders", { outlet }).then(setOpen).catch(() => {})
+    call<{ tables: TableTile[] }>("kamra.pos.table_map", { outlet })
+      .then((d) => setTables(d.tables)).catch(() => {})
   }, [outlet])
   useEffect(() => {
     loadOpen()
-    const unsub = subscribeRealtime(loadOpen) // live tabs across captains
+    const unsub = subscribeRealtime(loadOpen) // live tabs + table map across captains
     const t = setInterval(loadOpen, 20_000)
     return () => { unsub(); clearInterval(t) }
   }, [loadOpen])
 
-  function newOrder() {
-    setSelected(null); setDetail(null); setCart([]); setRoom(""); setTable("")
+  function resetPanel() {
+    setCart([]); setDiscount(""); setSettling(false)
+    setVoiding(null); setVoidReason(""); setCancelling(false); setCancelReason("")
+  }
+  function newOrder(atTable?: string) {
+    setSelected(null); setDetail(null); setRoom(""); resetPanel()
+    setTable(atTable || "")
+    if (atTable) setOrderType("Dine In")
   }
   async function openTab(name: string) {
-    setSelected(name); setCart([])
+    setSelected(name); resetPanel()
     const d = await call<Detail>("kamra.pos.order_detail", { order: name })
+    setDetail(d)
+  }
+  async function reloadDetail() {
+    if (!selected) return
+    const d = await call<Detail>("kamra.pos.order_detail", { order: selected })
     setDetail(d)
   }
   /** Step to the previous/next running order (wraps); from "New order" it
@@ -147,17 +198,37 @@ export default function POS() {
     finally { setBusy(false) }
   }
 
+  const outletName = outlets.find((o) => o.name === outlet)?.outlet_name || outlet
+  const orderLabel = (d: { table_no?: string | null; room?: string | null; order_type?: string | null; name?: string }) =>
+    d.table_no ? `Table ${d.table_no}`
+      : d.room ? `Room ${d.room.split("-").pop()}`
+        : d.order_type === "Takeaway" ? "Takeaway" : (d.name || "Order")
+
+  function maybePrintKot(kot: { kot_no: number | null; fired_items: { item_name: string; qty: number; instructions?: string | null }[] },
+                         label: string, type: string | null) {
+    if (!printKot || !kot.fired_items?.length) return
+    printThermal(`KOT #${kot.kot_no}`, kotHtml({
+      outlet: outletName, kot_no: kot.kot_no, label,
+      order_type: type, order: "", items: kot.fired_items,
+    }))
+  }
+
   async function sendNew() {
     await act(async () => {
       const r = await call<{ order: string }>("kamra.pos.create_order", {
-        outlet, property: getCurrentProperty(), room: room || null, table_no: table || null,
+        outlet, property: getCurrentProperty(),
+        order_type: orderType,
+        room: orderType === "Room Service" ? room || null : null,
+        table_no: orderType === "Dine In" ? table || null : null,
         items: cart.map((l) => ({ menu_item: l.menu_item, qty: l.qty, instructions: l.instructions })),
       })
       if (disc > 0) await call("kamra.pos.apply_discount", { order: r.order, amount: disc, reason: "" })
       await call("kamra.pos.confirm_order", { order: r.order })
-      await call("kamra.pos.fire_kot", { order: r.order })
+      const kot = await call<{ kot_no: number | null; fired_items: { item_name: string; qty: number; instructions?: string | null }[] }>(
+        "kamra.pos.fire_kot", { order: r.order })
+      maybePrintKot(kot, orderType === "Dine In" && table ? `Table ${table}`
+        : orderType === "Room Service" && room ? `Room ${room.split("-").pop()}` : orderType, orderType)
       newOrder()
-      setDiscount("")
     })
   }
   async function addRound() {
@@ -167,15 +238,55 @@ export default function POS() {
         order: selected,
         items: cart.map((l) => ({ menu_item: l.menu_item, qty: l.qty, instructions: l.instructions })),
       })
-      await call("kamra.pos.fire_kot", { order: selected })
-      const d = await call<Detail>("kamra.pos.order_detail", { order: selected })
-      setDetail(d); setCart([])
+      const kot = await call<{ kot_no: number | null; fired_items: { item_name: string; qty: number; instructions?: string | null }[] }>(
+        "kamra.pos.fire_kot", { order: selected })
+      if (detail) maybePrintKot(kot, orderLabel(detail), detail.order_type)
+      await reloadDetail(); setCart([])
     })
   }
   async function deliver() {
     if (!selected) return
     await act(async () => {
       await call("kamra.pos.deliver_order", { order: selected })
+      newOrder()
+    })
+  }
+  async function settle(mode: "Cash" | "Card" | "UPI") {
+    if (!selected) return
+    const order = selected
+    await act(async () => {
+      await call("kamra.pos.pay_order", { order, mode })
+      const bill = await call<BillData>("kamra.pos.bill_data", { order })
+      printThermal(`Bill ${order}`, billHtml(bill))
+      newOrder()
+    })
+  }
+  async function printBill() {
+    if (!selected) return
+    const bill = await call<BillData>("kamra.pos.bill_data", { order: selected })
+    printThermal(`Bill ${selected}`, billHtml(bill))
+  }
+  function reprintKot() {
+    if (!detail) return
+    const items = detail.items.filter((i) => !i.voided && i.kot_status !== "New")
+    if (!items.length) return
+    printThermal(`KOT #${detail.kot_no}`, kotHtml({
+      outlet: outletName, kot_no: detail.kot_no, label: orderLabel(detail),
+      order_type: detail.order_type, order: detail.name, reprint: true, items,
+    }))
+  }
+  async function confirmVoid() {
+    if (!selected || !voiding || !voidReason.trim()) return
+    await act(async () => {
+      await call("kamra.pos.void_item", { order: selected, item_row: voiding.row, reason: voidReason })
+      setVoiding(null); setVoidReason("")
+      await reloadDetail()
+    })
+  }
+  async function confirmCancel() {
+    if (!selected || !cancelReason.trim()) return
+    await act(async () => {
+      await call("kamra.pos.cancel_order", { order: selected, reason: cancelReason })
       newOrder()
     })
   }
@@ -197,6 +308,11 @@ export default function POS() {
             <UtensilsCrossed className="size-5 text-brand-600" />Restaurant POS
           </h1>
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-500">
+              <input type="checkbox" checked={printKot} onChange={(e) => setPrintKot(e.target.checked)}
+                className="accent-brand-600" />
+              <Printer className="size-3.5" />Print KOT
+            </label>
             <select className={inputCls + " !w-auto"} value={outlet} onChange={(e) => { setOutlet(e.target.value); newOrder() }}>
               {outlets.map((o) => <option key={o.name} value={o.name}>{o.outlet_name}</option>)}
             </select>
@@ -205,6 +321,37 @@ export default function POS() {
             </button>
           </div>
         </div>
+
+        {/* table map - the captain's home view: every table, live state */}
+        {tables.length > 0 && (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Tables</h3>
+              <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+                <span className="flex items-center gap-1"><span className="size-2.5 rounded-full border border-dashed border-zinc-400" />Vacant</span>
+                <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-amber-400" />Running</span>
+                <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-sky-400" />In kitchen</span>
+                <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-400" />Ready</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
+              {tables.map((t) => (
+                <button key={t.table}
+                  onClick={() => t.order ? openTab(t.order) : newOrder(t.table)}
+                  className={"rounded-xl border p-2 text-center transition " + TILE[t.state] +
+                    (t.order && selected === t.order ? " ring-2 ring-brand-600 ring-offset-1" :
+                      !t.order && selected === null && table === t.table ? " ring-2 ring-brand-600 ring-offset-1" : "")}>
+                  <div className="text-sm font-bold">{t.table}</div>
+                  {t.order ? (
+                    <div className="text-[11px] tabular-nums">₹{inr(t.order_total)}</div>
+                  ) : (
+                    <div className="text-[11px] opacity-60">+</div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* running tabs - step through several tables at once */}
         <div className="flex items-center gap-2">
@@ -217,7 +364,7 @@ export default function POS() {
             <ChevronLeft className="size-4" />
           </button>
           <div className="flex flex-1 gap-2 overflow-x-auto pb-1">
-            <button onClick={newOrder}
+            <button onClick={() => newOrder()}
               className={"inline-flex shrink-0 items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium " +
                 (selected === null ? "border-brand-600 bg-brand-600 text-white" : "border-dashed border-zinc-300 text-zinc-600 hover:border-brand-400")}>
               <Plus className="size-4" />New order
@@ -272,28 +419,75 @@ export default function POS() {
             {selected && detail ? (
               <>
                 <div className="mb-2 flex items-center justify-between">
-                  <h2 className="font-semibold">{detail.table_no ? `Table ${detail.table_no}` : detail.room ? `Room ${detail.room.split("-").pop()}` : detail.name}</h2>
-                  <span className="text-xs text-zinc-400">{detail.status}</span>
+                  <h2 className="font-semibold">{orderLabel(detail)}</h2>
+                  <span className="text-xs text-zinc-400">
+                    {detail.kot_no ? `KOT #${detail.kot_no} · ` : ""}{detail.status}
+                  </span>
                 </div>
                 <ul className="mb-2 space-y-1 border-b border-zinc-100 pb-2 text-sm">
                   {detail.items.map((it) => (
-                    <li key={it.row} className="flex justify-between">
-                      <span>{Math.round(it.qty)}× {it.item_name}
-                        {it.kot_status !== "New" && <span className="ml-1 text-[10px] text-zinc-400">{it.kot_status}</span>}
+                    <li key={it.row} className="group flex items-center justify-between gap-1">
+                      <span className={it.voided ? "text-zinc-400 line-through" : ""}>
+                        {Math.round(it.qty)}× {it.item_name}
+                        {!it.voided && it.kot_status !== "New" && <span className="ml-1 text-[10px] text-zinc-400">{it.kot_status}</span>}
                       </span>
-                      <span className="tabular-nums">₹{inr(it.amount)}</span>
+                      <span className="flex items-center gap-1">
+                        <span className="tabular-nums">₹{inr(it.amount)}</span>
+                        {!it.voided && detail.status !== "Delivered" && (
+                          <button title="Void line" onClick={() => { setVoiding(it); setVoidReason("") }}
+                            className="text-zinc-300 opacity-0 transition group-hover:opacity-100 hover:text-rose-500">
+                            <XCircle className="size-3.5" />
+                          </button>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>
+                {voiding && (
+                  <div className="mb-2 rounded-lg border border-rose-200 bg-rose-50 p-2">
+                    <p className="mb-1 text-xs font-medium text-rose-700">Void {voiding.item_name} — reason required</p>
+                    <div className="flex gap-1">
+                      <input autoFocus className={inputCls + " !py-1 text-xs"} placeholder="e.g. spilled, wrong item"
+                        value={voidReason} onChange={(e) => setVoidReason(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && confirmVoid()} />
+                      <Button variant="outline" className="!px-2 !py-1 text-xs font-semibold text-rose-600" disabled={busy || !voidReason.trim()} onClick={confirmVoid}>Void</Button>
+                      <Button variant="ghost" className="!px-2 !py-1 text-xs" onClick={() => setVoiding(null)}>✕</Button>
+                    </div>
+                  </div>
+                )}
                 <div className="mb-2 flex justify-between text-sm font-semibold"><span>Running total</span><span>₹{inr(detail.order_total)}</span></div>
               </>
             ) : (
-              <div className="mb-3 grid grid-cols-2 gap-2">
-                <select className={inputCls} value={room} onChange={(e) => setRoom(e.target.value)}>
-                  <option value="">Room…</option>
-                  {rooms.map((r) => <option key={r.name} value={r.name}>Room {r.room_number}</option>)}
-                </select>
-                <input className={inputCls} placeholder="Table" value={table} onChange={(e) => setTable(e.target.value)} />
+              <div className="mb-3 space-y-2">
+                <div className="flex rounded-lg border border-zinc-200 p-0.5 text-sm">
+                  {ORDER_TYPES.map((t) => (
+                    <button key={t} onClick={() => setOrderType(t)}
+                      className={"flex-1 rounded-md px-2 py-1 " +
+                        (orderType === t ? "bg-brand-600 font-medium text-white" : "text-zinc-600 hover:bg-zinc-50")}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+                {orderType === "Room Service" && (
+                  <select className={inputCls} value={room} onChange={(e) => setRoom(e.target.value)}>
+                    <option value="">Room…</option>
+                    {rooms.map((r) => <option key={r.name} value={r.name}>Room {r.room_number}</option>)}
+                  </select>
+                )}
+                {orderType === "Dine In" && (
+                  tables.length > 0 ? (
+                    <select className={inputCls} value={table} onChange={(e) => setTable(e.target.value)}>
+                      <option value="">Table…</option>
+                      {tables.map((t) => (
+                        <option key={t.table} value={t.table}>
+                          {t.table}{t.state !== "vacant" ? " (occupied)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className={inputCls} placeholder="Table" value={table} onChange={(e) => setTable(e.target.value)} />
+                  )
+                )}
               </div>
             )}
 
@@ -327,14 +521,50 @@ export default function POS() {
             )}
 
             <div className="mt-3 space-y-2">
-              {selected ? (
+              {selected && detail ? (
                 <>
                   <Button className="w-full" disabled={busy || cart.length === 0} onClick={addRound}>
                     <Send className="size-4" />Add round & fire KOT
                   </Button>
-                  <Button variant="outline" className="w-full" disabled={busy} onClick={deliver}>
-                    <Wallet className="size-4" />Deliver & post to bill
-                  </Button>
+                  {detail.room ? (
+                    <Button variant="outline" className="w-full" disabled={busy} onClick={deliver}>
+                      <Wallet className="size-4" />Deliver & post to room
+                    </Button>
+                  ) : settling ? (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(["Cash", "Card", "UPI"] as const).map((m) => (
+                        <Button key={m} variant="outline" disabled={busy} onClick={() => settle(m)}>{m}</Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <Button variant="outline" className="w-full" disabled={busy} onClick={() => setSettling(true)}>
+                      <Wallet className="size-4" />Settle & print bill
+                    </Button>
+                  )}
+                  <div className="flex gap-1.5">
+                    <Button variant="ghost" className="flex-1 !px-2 !py-1 text-xs" disabled={!detail.kot_no} onClick={reprintKot}>
+                      <Printer className="size-3.5" />KOT
+                    </Button>
+                    <Button variant="ghost" className="flex-1 !px-2 !py-1 text-xs" onClick={printBill}>
+                      <Receipt className="size-3.5" />Bill
+                    </Button>
+                    <Button variant="ghost" className="flex-1 !px-2 !py-1 text-xs text-rose-600 hover:bg-rose-50"
+                      onClick={() => { setCancelling(true); setCancelReason("") }}>
+                      <Ban className="size-3.5" />Cancel
+                    </Button>
+                  </div>
+                  {cancelling && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 p-2">
+                      <p className="mb-1 text-xs font-medium text-rose-700">Cancel this order — reason required</p>
+                      <div className="flex gap-1">
+                        <input autoFocus className={inputCls + " !py-1 text-xs"} placeholder="e.g. guest left"
+                          value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && confirmCancel()} />
+                        <Button variant="outline" className="!px-2 !py-1 text-xs font-semibold text-rose-600" disabled={busy || !cancelReason.trim()} onClick={confirmCancel}>Cancel order</Button>
+                        <Button variant="ghost" className="!px-2 !py-1 text-xs" onClick={() => setCancelling(false)}>✕</Button>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <Button className="w-full" disabled={busy || cart.length === 0} onClick={sendNew}>

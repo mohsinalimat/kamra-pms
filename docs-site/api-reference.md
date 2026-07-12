@@ -5,7 +5,7 @@ outline: 2
 # REST API reference
 
 Every endpoint below is a whitelisted function — the same governed layer
-the UI and the AI use. **120 endpoints**, generated from the source
+the UI and the AI use. **125 endpoints**, generated from the source
 (`docs-site/gen_api.py`), so this page always matches the code.
 
 ## Calling convention
@@ -1177,6 +1177,7 @@ in-house stay is resolved so it can post to the folio later.
 | `table_no` | no | `None` |
 | `source` | no | `'Manual'` |
 | `notes` | no | `None` |
+| `order_type` | no | `None` |
 
 ### `kamra.pos.open_orders`
 
@@ -1184,6 +1185,18 @@ in-house stay is resolved so it can post to the folio later.
 
 Every running tab at an outlet - the tables/rooms being served right
 now, so a captain can juggle several at once.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `outlet` | yes |  |
+
+### `kamra.pos.table_map`
+
+**GET/POST**
+
+The table view a captain starts from: every table at the outlet with
+its live state - vacant, running (open bill), fired (KOT in the kitchen)
+or ready (everything prepared, awaiting service/settle).
 
 | Param | Required | Default |
 | --- | --- | --- |
@@ -1239,7 +1252,8 @@ The guest-discount popup - a captain grants a discount with a reason.
 **POST**
 
 Send the order to the kitchen: new lines become Fired and show on the
-kitchen display.
+kitchen display. Stamps the KOT number (a daily sequence per outlet) and
+returns just-fired lines so the till can print the thermal KOT ticket.
 
 | Param | Required | Default |
 | --- | --- | --- |
@@ -1275,6 +1289,55 @@ Kitchen marks one line (or the whole order) prepared.
 
 Order served - moves to Delivered, which posts it to the room folio
 (controller) when there's a linked stay.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+
+### `kamra.pos.pay_order`
+
+**POST**
+
+Settle a bill at the outlet (walk-ins, takeaway - or a guest who'd
+rather pay now than post to the room). Records the payment mode and
+closes the order without touching any folio.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+| `mode` | yes |  |
+
+### `kamra.pos.cancel_order`
+
+**POST**
+
+Cancel a running order - needs a reason (it's kept on the order for
+the audit trail). Closed orders can't be cancelled.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+| `reason` | yes |  |
+
+### `kamra.pos.void_item`
+
+**POST**
+
+Void one line with a reason - the line stays on the order (struck
+through, amount zero) so the KOT-vs-bill audit holds up.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+| `item_row` | yes |  |
+| `reason` | yes |  |
+
+### `kamra.pos.bill_data`
+
+**GET/POST**
+
+Everything the thermal bill print needs: outlet and property names,
+live lines, the discount, and the CGST/SGST split at the outlet's rate.
 
 | Param | Required | Default |
 | --- | --- | --- |

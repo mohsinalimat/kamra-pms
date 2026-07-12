@@ -13,7 +13,9 @@
   "rate",
   "amount",
   "instructions",
-  "kot_status"
+  "kot_status",
+  "voided",
+  "void_reason"
  ],
  "fields": [
   {
@@ -64,6 +66,16 @@
    "label": "KOT",
    "options": "New\nFired\nPrepared",
    "default": "New"
+  },
+  {
+   "fieldname": "voided",
+   "fieldtype": "Check",
+   "label": "Voided"
+  },
+  {
+   "fieldname": "void_reason",
+   "fieldtype": "Data",
+   "label": "Void Reason"
   }
  ],
  "grid_page_length": 50,

@@ -13,7 +13,8 @@
   "outlet_type",
   "column_break_a",
   "gst_rate",
-  "disabled"
+  "disabled",
+  "tables"
  ],
  "fields": [
   {
@@ -54,6 +55,12 @@
    "fieldname": "disabled",
    "fieldtype": "Check",
    "label": "Disabled"
+  },
+  {
+   "fieldname": "tables",
+   "fieldtype": "Small Text",
+   "label": "Tables",
+   "description": "One table name per line (T1, T2, Patio 1…). Powers the table map in the POS."
   }
  ],
  "grid_page_length": 50,

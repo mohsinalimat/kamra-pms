@@ -69,7 +69,8 @@ Hotels deserve better than:
 | Booking | **Multi-room bookings in one flow**, group & corporate bookings, booked-on-behalf (booker vs guest), returning-guest typeahead, **add-ons at booking**, sell messages, travel agents with commissions, day-use |
 | Revenue | Occupancy-based pricing, seasons, rate plans, vouchers, meal plans, **rate guardrails**, cancellation/no-show/deposit **policies enforced in code**, owner-briefing API |
 | Billing | Folios with per-line GST (₹7,500 slab auto-switch), **corporate billing rules** (charge routing, alcohol always to guest), **group master folios**, %/₹ **charge splits** with exact conservation, bulk transfers, automated night audit that also charges no-shows, GST invoices with B2B GSTIN, GSTR-1 export, cashier reconciliation, payment links via frappe/payments |
-| Operations | Service tickets with SLA, housekeeping **mobile app** (`/hk`), lost & found, shift handover, POS-lite (outlets/menu/orders → folio, alcohol-aware), venues & events |
+| F&B | Restaurant POS with a colour-coded **table map**, concurrent running bills (dine-in / room service / takeaway), **80mm thermal KOT and bill printing** with daily KOT numbers, live **kitchen display** per outlet, guest **QR ordering** with captain confirmation, cash/card/UPI settle or room posting (alcohol-aware), voids & cancellations with reasons |
+| Operations | Service tickets with SLA, housekeeping **mobile app** (`/hk`), lost & found, shift handover, venues & events |
 | Guests | Self check-in links, printable **GRC with the legal occupant register**, ID retention modes (store / verify-and-discard), experiences showcase |
 | Platform | Multi-property with per-user scoping, six-role RBAC, settings hub, **dark mode**, onboarding wizard + **AI migration tools**, savings ledger, **18-check eval harness in CI** |
 

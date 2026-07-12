@@ -677,6 +677,65 @@ def t25():
 	assert round(fd.grand_total - base, 2) == 367.50, fd.grand_total - base
 
 
+@check("POS: table map states, KOT numbering, void with reason, outlet settle")
+def t26():
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Diner",
+		"outlet_type": "Restaurant", "gst_rate": 5, "tables": "T1\nT2\nT3",
+	}).insert(ignore_permissions=True).name
+	mi1 = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Thali", "category": "Food", "price": 300,
+		"is_veg": 1, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+	mi2 = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Lassi", "category": "Beverage", "price": 100,
+		"is_veg": 1, "available": 1, "prep_station": "Bar",
+	}).insert(ignore_permissions=True).name
+
+	tm = pos.table_map(outlet)
+	assert len(tm["tables"]) == 3, tm
+	assert all(t["state"] == "vacant" for t in tm["tables"]), tm
+
+	o = pos.create_order(outlet, [{"menu_item": mi1, "qty": 1},
+	                              {"menu_item": mi2, "qty": 2}],
+	                     table_no="T2", order_type="Dine In")
+	assert o["order_total"] == 500, o["order_total"]
+	t2 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "T2"][0]
+	assert t2["state"] == "running", t2
+
+	fk = pos.fire_kot(o["order"])
+	assert fk["kot_no"] >= 1, fk  # daily sequence per outlet
+	assert len(fk["fired_items"]) == 2, fk
+	t2 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "T2"][0]
+	assert t2["state"] == "fired", t2
+
+	# void the lassi line with a reason - totals shrink, the line stays
+	det = pos.order_detail(o["order"])
+	lassi = next(i for i in det["items"] if i["item_name"] == "Eval Lassi")
+	v = pos.void_item(o["order"], lassi["row"], "spilled")
+	assert v["order_total"] == 300, v
+
+	b = pos.bill_data(o["order"])
+	assert b["grand_total"] == 315.0 and b["cgst"] == 7.5, b
+
+	p = pos.pay_order(o["order"], "UPI")
+	assert p["paid"] and p["order_total"] == 300, p
+	doc = frappe.get_doc("POS Order", o["order"])
+	assert doc.status == "Delivered" and not doc.posted_to_folio, doc.status
+	assert [t for t in pos.table_map(outlet)["tables"]
+	        if t["table"] == "T2"][0]["state"] == "vacant"
+
+	# a second order the same day gets the next KOT number
+	o2 = pos.create_order(outlet, [{"menu_item": mi1, "qty": 1}],
+	                      order_type="Takeaway")
+	assert pos.fire_kot(o2["order"])["kot_no"] == fk["kot_no"] + 1
+	pos.cancel_order(o2["order"], "guest left")
+	assert frappe.db.get_value("POS Order", o2["order"], "status") == "Cancelled"
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -699,7 +758,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

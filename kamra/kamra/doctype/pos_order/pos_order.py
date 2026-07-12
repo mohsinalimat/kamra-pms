@@ -10,7 +10,7 @@ class POSOrder(Document):
 	def validate(self):
 		subtotal = 0.0
 		for it in self.items:
-			it.amount = float(it.qty or 1) * float(it.rate or 0)
+			it.amount = 0.0 if it.voided else float(it.qty or 1) * float(it.rate or 0)
 			subtotal += it.amount
 		self.subtotal = subtotal
 		discount = min(float(self.discount_amount or 0), subtotal)
@@ -24,6 +24,9 @@ class POSOrder(Document):
 			return
 		if self.posted_to_folio or not self.reservation:
 			return
+		# settled at the outlet (cash/card/UPI) - never also post to the room
+		if self.paid:
+			return
 		# room-service charge routed by the company's billing rules; any
 		# alcohol on the order forces the whole order to the guest folio
 		from kamra.folio import _recalculate, target_folio
@@ -31,7 +34,7 @@ class POSOrder(Document):
 		res = frappe.get_doc("Reservation", self.reservation)
 		has_alcohol = any(
 			frappe.db.get_value("Menu Item", it.menu_item, "is_alcohol")
-			for it in self.items if it.menu_item
+			for it in self.items if it.menu_item and not it.voided
 		)
 		folio = frappe.get_doc(
 			"Folio",
@@ -40,7 +43,7 @@ class POSOrder(Document):
 			frappe.throw("Folio is closed — settle the order directly.")
 		gst = frappe.db.get_value("POS Outlet", self.outlet, "gst_rate") or 5
 		detail = ", ".join(
-			f"{it.item_name} ×{int(it.qty)}" for it in self.items)
+			f"{it.item_name} ×{int(it.qty)}" for it in self.items if not it.voided)
 		folio.append("charges", {
 			"posting_date": nowdate(),
 			"charge_type": "Food & Beverage",

@@ -28,7 +28,11 @@
   "discount_amount",
   "discount_reason",
   "kot_fired",
-  "subtotal"
+  "subtotal",
+  "order_type",
+  "kot_no",
+  "paid",
+  "payment_mode"
  ],
  "fields": [
   {
@@ -158,6 +162,34 @@
    "fieldname": "subtotal",
    "fieldtype": "Currency",
    "label": "Subtotal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "order_type",
+   "fieldtype": "Select",
+   "label": "Order Type",
+   "options": "Dine In\nRoom Service\nTakeaway",
+   "default": "Dine In",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "kot_no",
+   "fieldtype": "Int",
+   "label": "KOT #",
+   "read_only": 1,
+   "description": "Daily sequence per outlet, stamped when the KOT first fires."
+  },
+  {
+   "fieldname": "paid",
+   "fieldtype": "Check",
+   "label": "Paid",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_mode",
+   "fieldtype": "Select",
+   "label": "Payment Mode",
+   "options": "\nCash\nCard\nUPI",
    "read_only": 1
   }
  ],
