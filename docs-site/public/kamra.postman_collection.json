@@ -3864,6 +3864,43 @@
      }
     },
     {
+     "name": "mark_nc",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.pos.mark_nc",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.pos.mark_nc"
+       ]
+      },
+      "description": "Mark a bill NC (no charge / complimentary). Needs who authorized it\n(captain, chef, GM, management\u2026) and takes a free-text reference (the\noccasion, the complaint ticket, the promise made). The items still fire\nto the kitchen and print on the KOT - the bill just closes at zero and\nnever touches a folio. `undo=1` lifts it.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"order\": \"ORD-2026-00001\",\n  \"authorized_by\": \"<authorized_by>\",\n  \"note\": \"\",\n  \"undo\": 0\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
      "name": "cancel_order",
      "request": {
       "method": "POST",

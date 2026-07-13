@@ -36,7 +36,10 @@
   "guests",
   "customer_name",
   "customer_phone",
-  "delivery_address"
+  "delivery_address",
+  "nc",
+  "nc_authorized_by",
+  "nc_note"
  ],
  "fields": [
   {
@@ -215,6 +218,22 @@
    "fieldname": "delivery_address",
    "fieldtype": "Small Text",
    "label": "Delivery Address"
+  },
+  {
+   "fieldname": "nc",
+   "fieldtype": "Check",
+   "label": "No Charge (NC)",
+   "description": "Complimentary order - bills at zero, never posts to a folio."
+  },
+  {
+   "fieldname": "nc_authorized_by",
+   "fieldtype": "Data",
+   "label": "NC Authorized By"
+  },
+  {
+   "fieldname": "nc_note",
+   "fieldtype": "Small Text",
+   "label": "NC Reference"
   }
  ],
  "grid_page_length": 50,

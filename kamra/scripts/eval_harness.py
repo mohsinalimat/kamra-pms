@@ -828,6 +828,61 @@ def t28():
 	assert not rec[0]["open"], rec
 
 
+@check("POS: table areas, temp-table tiles, NC bills at zero with auth")
+def t29():
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Terrace",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+		"tables": "[Hall]\nH1:4\nH2:2\n[Patio]\nP1:4",
+	}).insert(ignore_permissions=True).name
+	mi = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Kebab", "category": "Food", "price": 350,
+		"is_veg": 0, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+
+	# areas parse from the layout headers
+	tm = pos.table_map(outlet)
+	assert [(t["table"], t["area"]) for t in tm["tables"]] == [
+		("H1", "Hall"), ("H2", "Hall"), ("P1", "Patio")], tm
+
+	# a bill on a table outside the layout becomes a live temp tile
+	o = pos.create_order(outlet, [{"menu_item": mi, "qty": 1}],
+	                     table_no="Counter 2", order_type="Dine In")
+	tm = pos.table_map(outlet)
+	temp = [t for t in tm["tables"] if t.get("temp")]
+	assert len(temp) == 1 and temp[0]["table"] == "Counter 2", tm
+	assert temp[0]["area"] == "Temp" and temp[0]["state"] == "running", temp
+	assert not tm["other"], tm["other"]  # it's a tile now, not a loose tab
+
+	# NC: needs an authorizer, zeroes the bill, blocks payment, skips folio
+	try:
+		pos.mark_nc(o["order"], "")
+		raise AssertionError("NC without authorizer accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+	nc = pos.mark_nc(o["order"], "GM", "regular guest birthday")
+	assert nc["nc"] and nc["order_total"] == 0, nc
+	pos.fire_kot(o["order"])
+	b = pos.bill_data(o["order"])
+	assert b["grand_total"] == 0 and b["nc_authorized_by"] == "GM", b
+	assert b["nc_note"] == "regular guest birthday", b
+	try:
+		pos.pay_order(o["order"], "Cash")
+		raise AssertionError("NC bill accepted a payment")
+	except frappe.exceptions.ValidationError:
+		pass
+	out = pos.deliver_order(o["order"])
+	assert not out["posted_to_folio"], out
+	# undo path exists while a bill is open
+	o2 = pos.create_order(outlet, [{"menu_item": mi, "qty": 1}],
+	                      table_no="H1")
+	pos.mark_nc(o2["order"], "Chef")
+	back = pos.mark_nc(o2["order"], "", undo=1)
+	assert not back["nc"] and back["order_total"] == 350, back
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -850,7 +905,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

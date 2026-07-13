@@ -5,7 +5,7 @@ outline: 2
 # REST API reference
 
 Every endpoint below is a whitelisted function — the same governed layer
-the UI and the AI use. **127 endpoints**, generated from the source
+the UI and the AI use. **128 endpoints**, generated from the source
 (`docs-site/gen_api.py`), so this page always matches the code.
 
 ## Calling convention
@@ -1340,6 +1340,23 @@ closes the order without touching any folio.
 | --- | --- | --- |
 | `order` | yes |  |
 | `mode` | yes |  |
+
+### `kamra.pos.mark_nc`
+
+**POST**
+
+Mark a bill NC (no charge / complimentary). Needs who authorized it
+(captain, chef, GM, management…) and takes a free-text reference (the
+occasion, the complaint ticket, the promise made). The items still fire
+to the kitchen and print on the KOT - the bill just closes at zero and
+never touches a folio. `undo=1` lifts it.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+| `authorized_by` | yes |  |
+| `note` | no | `''` |
+| `undo` | no | `0` |
 
 ### `kamra.pos.cancel_order`
 

@@ -122,13 +122,30 @@ def execute():
 		}).insert(ignore_permissions=True)
 		added_venue += 1
 
+	# area-wise table layouts ("[Area]" headers, "name:seats" lines) so the
+	# POS table map shows areas, seats and a realistic floor
+	RESTAURANT_TABLES = "\n".join([
+		"[Main Hall]",
+		"T1:2", "T2:4", "T3:4", "T4:2", "T5:4", "T6:6", "T7:2", "T8:4",
+		"[Family]",
+		"F1:6", "F2:6", "F3:8",
+		"[Patio]",
+		"P1:2", "P2:2", "P3:4", "P4:4",
+		"[Private Dining]",
+		"PDR:10",
+	])
+	BAR_TABLES = "\n".join([
+		"[Counter]",
+		"C1:1", "C2:1", "C3:1", "C4:1", "C5:1", "C6:1",
+		"[Lounge]",
+		"L1:4", "L2:4", "L3:6", "L4:2",
+		"[Poolside]",
+		"S1:2", "S2:2", "S3:4",
+	])
 	added_outlet = added_item = 0
 	for oname, otype, gst, items in POS:
-		# dine-in outlets get a table layout ("name:seats") so the POS
-		# table map lights up with seat counts
-		seat_plan = [2, 4, 4, 2, 4, 6, 2, 4, 6, 2, 4, 6]
-		tables = ("\n".join(f"T{i}:{s}" for i, s in enumerate(seat_plan, 1))
-		          if otype in ("Restaurant", "Bar") else None)
+		tables = (RESTAURANT_TABLES if otype == "Restaurant"
+		          else BAR_TABLES if otype == "Bar" else None)
 		outlet = frappe.db.get_value(
 			"POS Outlet", {"property": PROPERTY, "outlet_name": oname})
 		if not outlet:
@@ -140,7 +157,7 @@ def execute():
 			added_outlet += 1
 		elif tables:
 			current = frappe.db.get_value("POS Outlet", outlet, "tables") or ""
-			if not current or ":" not in current:  # upgrade plain layouts
+			if "[" not in current:  # upgrade layouts that predate areas
 				frappe.db.set_value("POS Outlet", outlet, "tables", tables)
 		for item, cat, price, veg, station, img in items:
 			if frappe.db.exists("Menu Item", {"outlet": outlet, "item_name": item}):

@@ -169,39 +169,50 @@ def table_map(outlet: str):
 	them all and shows the most urgent state."""
 	raw = frappe.db.get_value("POS Outlet", outlet, "tables") or ""
 	tables = []
+	area = None
 	for line in raw.replace(",", "\n").splitlines():
 		line = line.strip()
 		if not line:
 			continue
-		# "T1:4" = table T1 with 4 seats; plain "T1" works too
+		# "[Main Hall]" starts an area; "T1:4" = table T1 with 4 seats;
+		# plain "T1" works too
+		if line.startswith("[") and line.endswith("]"):
+			area = line[1:-1].strip() or None
+			continue
 		name, _sep, seats = line.partition(":")
 		tables.append((name.strip(),
-		               int(seats) if seats.strip().isdigit() else None))
+		               int(seats) if seats.strip().isdigit() else None, area))
 	running = open_orders(outlet)
 	by_table: dict[str, list] = {}
 	for r in running:
 		if r.get("table_no"):
 			by_table.setdefault(r["table_no"], []).append(r)
-	out = []
-	for t, seats in tables:
+
+	def tile(t, seats, area, temp=False):
 		orders = by_table.get(t, [])
+		base = {"table": t, "seats": seats, "area": area, "temp": temp}
 		if not orders:
-			out.append({"table": t, "seats": seats, "state": "vacant",
-			            "bills": 0, "orders": []})
-			continue
+			return {**base, "state": "vacant", "bills": 0, "orders": []}
 		states = [_order_state(o) for o in orders]
 		state = ("fired" if "fired" in states
 		         else "running" if "running" in states else "ready")
-		out.append({
-			"table": t, "seats": seats, "state": state, "bills": len(orders),
+		return {
+			**base, "state": state, "bills": len(orders),
 			"order_total": sum(o["order_total"] or 0 for o in orders),
 			"guests": sum(o.get("guests") or 0 for o in orders) or None,
 			"since": str(min(o["creation"] for o in orders)),
 			"orders": [{"order": o["name"], "label": o["label"],
 			            "order_total": o["order_total"], "state": s}
 			           for o, s in zip(orders, states)],
-		})
-	# tabs not shown on a tile (rooms, takeaway, ad-hoc/temp tables)
+		}
+
+	out = [tile(t, seats, a) for t, seats, a in tables]
+	# ad-hoc/temp tables (a named table outside the layout) get live tiles
+	# too, so a parked "Patio X" bill stays visible
+	configured = {t for t, _s, _a in tables}
+	for t in sorted(t for t in by_table if t not in configured):
+		out.append(tile(t, None, "Temp", temp=True))
+	# tabs not on any tile (rooms, takeaway, delivery)
 	shown = {b["order"] for t in out for b in t["orders"]}
 	other = [r for r in running if r["name"] not in shown]
 	return {"tables": out, "other": other}
@@ -216,7 +227,7 @@ def recent_orders(outlet: str, limit: int = 8):
 		"POS Order", filters={"outlet": outlet},
 		fields=["name", "status", "order_type", "room", "table_no",
 		        "customer_name", "order_total", "paid", "payment_mode",
-		        "creation", "modified"],
+		        "nc", "creation", "modified"],
 		order_by="modified desc", limit=min(int(limit or 8), 25))
 	for r in rows:
 		r["label"] = _label(r)
@@ -260,6 +271,8 @@ def split_order(order: str, item_rows, table_no: str | None = None):
 		"customer_name": src.customer_name,
 		"customer_phone": src.customer_phone,
 		"delivery_address": src.delivery_address,
+		"nc": src.nc, "nc_authorized_by": src.nc_authorized_by,
+		"nc_note": src.nc_note,
 		"table_no": table_no or src.table_no,
 		"captain": frappe.session.user,
 		"kot_fired": 1 if any(it.kot_status != "New" for it in move) else 0,
@@ -291,6 +304,8 @@ def order_detail(order: str):
 		"guests": doc.guests, "customer_name": doc.customer_name,
 		"customer_phone": doc.customer_phone,
 		"delivery_address": doc.delivery_address,
+		"nc": doc.nc, "nc_authorized_by": doc.nc_authorized_by,
+		"nc_note": doc.nc_note,
 		"paid": doc.paid, "payment_mode": doc.payment_mode,
 		"discount_amount": doc.discount_amount, "discount_reason": doc.discount_reason,
 		"subtotal": doc.subtotal, "order_total": doc.order_total,
@@ -367,7 +382,7 @@ def fire_kot(order: str):
 		doc.status = "Preparing"
 	doc.save()
 	return {"ok": True, "status": doc.status, "kot_no": doc.kot_no,
-	        "fired_items": fired}
+	        "nc": bool(doc.nc), "fired_items": fired}
 
 
 @frappe.whitelist()
@@ -444,12 +459,40 @@ def pay_order(order: str, mode: str):
 		frappe.throw(_("Already posted to the room folio - settle it there."))
 	if doc.paid:
 		frappe.throw(_("Already paid."))
+	if doc.nc:
+		frappe.throw(_("This is an NC (complimentary) bill - close it with "
+		              "Deliver, there is nothing to collect."))
 	doc.paid = 1
 	doc.payment_mode = mode
 	doc.status = "Delivered"
 	doc.save()
 	return {"ok": True, "status": "Delivered", "paid": True, "mode": mode,
 	        "order_total": doc.order_total}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles(*POS_ROLES)
+def mark_nc(order: str, authorized_by: str, note: str = "", undo: int = 0):
+	"""Mark a bill NC (no charge / complimentary). Needs who authorized it
+	(captain, chef, GM, management…) and takes a free-text reference (the
+	occasion, the complaint ticket, the promise made). The items still fire
+	to the kitchen and print on the KOT - the bill just closes at zero and
+	never touches a folio. `undo=1` lifts it."""
+	doc = frappe.get_doc("POS Order", order)
+	if doc.status in ("Delivered", "Cancelled"):
+		frappe.throw(_("This order is already closed."))
+	if int(undo or 0):
+		doc.nc = 0
+		doc.nc_authorized_by = None
+		doc.nc_note = None
+	else:
+		if not (authorized_by or "").strip():
+			frappe.throw(_("Who authorized the NC? (captain / chef / GM…)"))
+		doc.nc = 1
+		doc.nc_authorized_by = authorized_by.strip()[:80]
+		doc.nc_note = (note or "").strip()[:200] or None
+	doc.save()
+	return {"ok": True, "nc": bool(doc.nc), "order_total": doc.order_total}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -498,7 +541,7 @@ def bill_data(order: str):
 		"POS Outlet", doc.outlet, ["outlet_name", "gst_rate"], as_dict=True)
 	property_name = frappe.db.get_value(
 		"Property", doc.property, "property_name") or doc.property
-	gst_rate = float(outlet.gst_rate or 5)
+	gst_rate = 0.0 if doc.nc else float(outlet.gst_rate or 5)
 	taxable = float(doc.order_total or 0)
 	gst_amount = round(taxable * gst_rate / 100, 2)
 	return {
@@ -519,4 +562,6 @@ def bill_data(order: str):
 		"cgst": round(gst_amount / 2, 2), "sgst": round(gst_amount / 2, 2),
 		"grand_total": round(taxable + gst_amount, 2),
 		"paid": doc.paid, "payment_mode": doc.payment_mode,
+		"nc": doc.nc, "nc_authorized_by": doc.nc_authorized_by,
+		"nc_note": doc.nc_note,
 	}

@@ -15,7 +15,9 @@ class POSOrder(Document):
 		self.subtotal = subtotal
 		discount = min(float(self.discount_amount or 0), subtotal)
 		self.discount_amount = discount
-		self.order_total = subtotal - discount
+		# NC (no charge): the items stand for the kitchen and the audit,
+		# but the bill is zero
+		self.order_total = 0.0 if self.nc else subtotal - discount
 
 	def on_update(self):
 		previous = self.get_doc_before_save()
@@ -26,6 +28,9 @@ class POSOrder(Document):
 			return
 		# settled at the outlet (cash/card/UPI) - never also post to the room
 		if self.paid:
+			return
+		# complimentary - there is nothing to charge anywhere
+		if self.nc:
 			return
 		# room-service charge routed by the company's billing rules; any
 		# alcohol on the order forces the whole order to the guest folio

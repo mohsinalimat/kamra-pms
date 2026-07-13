@@ -29,7 +29,11 @@ bills at once — dine-in, room service, takeaway and delivery (with the
 customer's name, phone and address carried onto the KOT and bill). A table holds **any
 number of bills** (two parties sharing a table each get their own), bills
 **split by items** onto a new bill with kitchen status preserved, and
-ad-hoc **temp tables** can be named on the fly. Firing a KOT stamps a
+ad-hoc **temp tables** can be named on the fly (they appear as live
+tiles until settled). Table layouts group **area-wise** — Main Hall,
+Patio, Rooftop — with area filters on the map. **NC (no charge)** bills
+need an authorizer (captain / chef / GM) and a reference, print "NC — NO
+CHARGE" on the KOT and bill, close at zero and never touch a folio. Firing a KOT stamps a
 daily **KOT number** and prints an **80mm thermal ticket** (KDS-only
 kitchens can turn printing off); a live **kitchen display** per outlet
 (Kitchen/Bar stations, colour-aged tickets) runs alongside. Bills print on

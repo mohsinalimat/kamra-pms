@@ -54,6 +54,8 @@ export function kotHtml(o: {
   reprint?: boolean
   customer?: string | null
   address?: string | null
+  nc?: boolean
+  nc_by?: string | null
   items: KotLine[]
 }) {
   const when = new Date().toLocaleString("en-IN", {
@@ -68,6 +70,8 @@ export function kotHtml(o: {
   return `
     <div class="c b lg">${esc(o.outlet)}</div>
     <div class="c xl b">KOT #${o.kot_no ?? "—"}${o.reprint ? " (REPRINT)" : ""}</div>
+    ${o.nc ? `<div class="c b lg">*** NC — NO CHARGE ***</div>` +
+      (o.nc_by ? `<div class="c sm">auth: ${esc(o.nc_by)}</div>` : "") : ""}
     <div class="rule"></div>
     <div class="row"><span class="b lg">${esc(o.label)}</span><span class="sm">${esc(o.order_type || "")}</span></div>
     <div class="row sm"><span>${esc(o.order)}</span><span>${when}</span></div>
@@ -101,6 +105,9 @@ export interface BillData {
   grand_total: number
   paid: number
   payment_mode: string | null
+  nc: number
+  nc_authorized_by: string | null
+  nc_note: string | null
 }
 
 export function billHtml(b: BillData) {
@@ -137,6 +144,8 @@ export function billHtml(b: BillData) {
     ${money(`SGST @ ${b.gst_rate / 2}%`, b.sgst, "sm")}
     <div class="rule"></div>
     ${money("TOTAL", b.grand_total, "b lg")}
+    ${b.nc ? `<div class="c b" style="margin-top:4px">COMPLIMENTARY — NO CHARGE</div>` +
+      `<div class="c sm">auth: ${esc(b.nc_authorized_by || "—")}${b.nc_note ? ` · ${esc(b.nc_note)}` : ""}</div>` : ""}
     ${b.paid ? `<div class="c b" style="margin-top:4px">PAID · ${esc(b.payment_mode)}</div>` : ""}
     <div class="rule"></div>
     <div class="c sm">Thank you — see you again!</div>`

@@ -45,6 +45,8 @@ interface TableBill {
 interface TableTile {
   table: string
   seats: number | null
+  area: string | null
+  temp?: boolean
   state: "vacant" | "running" | "fired" | "ready"
   bills: number
   order_total?: number
@@ -60,6 +62,7 @@ interface RecentOrder {
   order_total: number
   paid: number
   payment_mode: string | null
+  nc: number
   modified: string
   open: boolean
 }
@@ -91,6 +94,9 @@ interface Detail {
   customer_name: string | null
   customer_phone: string | null
   delivery_address: string | null
+  nc: number
+  nc_authorized_by: string | null
+  nc_note: string | null
   paid: number
   payment_mode: string | null
   discount_amount: number
@@ -133,6 +139,10 @@ export default function POS() {
   const [recent, setRecent] = useState<RecentOrder[]>([])
   const [tableQuery, setTableQuery] = useState("")
   const [tableFilter, setTableFilter] = useState<"all" | "available" | "occupied">("all")
+  const [areaFilter, setAreaFilter] = useState("All")
+  const [ncOpen, setNcOpen] = useState(false)
+  const [ncBy, setNcBy] = useState("Captain")
+  const [ncNote, setNcNote] = useState("")
   const [selected, setSelected] = useState<string | null>(null) // null = new bill
   const [detail, setDetail] = useState<Detail | null>(null)
   const [orderType, setOrderType] = useState<OrderType>("Dine In")
@@ -200,6 +210,7 @@ export default function POS() {
     setCart([]); setDiscount(""); setDiscOpen(false); setSettling(false); setMoreOpen(false)
     setVoiding(null); setVoidReason(""); setCancelling(false); setCancelReason("")
     setSplitMode(false); setSplitSel(new Set()); setChooser(null)
+    setNcOpen(false); setNcBy("Captain"); setNcNote("")
   }
   function newOrder(atTable?: string) {
     setSelected(null); setDetail(null); setRoom(""); resetPanel()
@@ -263,13 +274,15 @@ export default function POS() {
   const gstAmt = taxable * gstRate / 100
   const grand = taxable + gstAmt
 
-  function maybePrintKot(kot: { kot_no: number | null; fired_items: { item_name: string; qty: number; instructions?: string | null }[] },
+  function maybePrintKot(kot: { kot_no: number | null; nc?: boolean; fired_items: { item_name: string; qty: number; instructions?: string | null }[] },
                          label: string, type: string | null,
-                         customer?: string | null, address?: string | null) {
+                         customer?: string | null, address?: string | null,
+                         ncBy?: string | null) {
     if (!printKot || !kot.fired_items?.length) return
     printThermal(`KOT #${kot.kot_no}`, kotHtml({
       outlet: outletName, kot_no: kot.kot_no, label,
-      order_type: type, order: "", customer, address, items: kot.fired_items,
+      order_type: type, order: "", customer, address,
+      nc: !!kot.nc, nc_by: ncBy, items: kot.fired_items,
     }))
   }
 
@@ -313,10 +326,10 @@ export default function POS() {
           order: selected,
           items: cart.map((l) => ({ menu_item: l.menu_item, qty: l.qty, instructions: l.instructions })),
         })
-        const kot = await call<{ kot_no: number | null; fired_items: { item_name: string; qty: number; instructions?: string | null }[] }>(
+        const kot = await call<{ kot_no: number | null; nc?: boolean; fired_items: { item_name: string; qty: number; instructions?: string | null }[] }>(
           "kamra.pos.fire_kot", { order: selected })
         if (detail) maybePrintKot(kot, orderLabel(detail), detail.order_type,
-          detail.customer_name, detail.delivery_address)
+          detail.customer_name, detail.delivery_address, detail.nc_authorized_by)
         await reloadDetail(); setCart([])
       })
     } else {
@@ -330,7 +343,7 @@ export default function POS() {
   }
   async function proceedToPay() { // F4
     if (selected && detail) {
-      if (detail.room) await act(async () => { await call("kamra.pos.deliver_order", { order: selected }); newOrder() })
+      if (detail.room || detail.nc) await act(async () => { await call("kamra.pos.deliver_order", { order: selected }); newOrder() })
       else setSettling(true)
     } else if (cart.length > 0) {
       await act(async () => {
@@ -362,8 +375,19 @@ export default function POS() {
     printThermal(`KOT #${detail.kot_no}`, kotHtml({
       outlet: outletName, kot_no: detail.kot_no, label: orderLabel(detail),
       order_type: detail.order_type, order: detail.name, reprint: true,
-      customer: detail.customer_name, address: detail.delivery_address, items,
+      customer: detail.customer_name, address: detail.delivery_address,
+      nc: !!detail.nc, nc_by: detail.nc_authorized_by, items,
     }))
+  }
+  async function saveNc(undo = false) {
+    if (!selected) return
+    await act(async () => {
+      await call("kamra.pos.mark_nc", {
+        order: selected, authorized_by: ncBy, note: ncNote, undo: undo ? 1 : 0,
+      })
+      setNcOpen(false)
+      await reloadDetail()
+    })
   }
   async function applyDiscount() {
     if (!selected) { setDiscOpen(false); return } // new bill: applied at create
@@ -435,10 +459,18 @@ export default function POS() {
   const tableNames = new Set(tables.map((t) => t.table))
   const looseBills = open.filter((o) =>
     !o.table_no || !tableNames.has(o.table_no))
+  const areas = [...new Set(tables.map((t) => t.area).filter(Boolean))] as string[]
   const visibleTables = tables.filter((t) =>
     (tableFilter === "all" || (tableFilter === "available" ? t.state === "vacant" : t.state !== "vacant")) &&
+    (areaFilter === "All" || (t.area || "Other") === areaFilter) &&
     (!tableQuery.trim() || t.table.toLowerCase().includes(tableQuery.toLowerCase())))
   const availableCount = tables.filter((t) => t.state === "vacant").length
+  // group under area headings when a floor plan has areas and no area is picked
+  const tableGroups: [string | null, TableTile[]][] =
+    areas.length > 0 && areaFilter === "All"
+      ? [...new Map(visibleTables.map((t) => [t.area || "Other", true])).keys()]
+          .map((a) => [a, visibleTables.filter((t) => (t.area || "Other") === a)])
+      : [[null, visibleTables]]
 
   const isNewCustomerType = !selected && (orderType === "Takeaway" || orderType === "Delivery")
 
@@ -493,7 +525,7 @@ export default function POS() {
                     <input className={inputCls + " !py-1 pl-8 text-xs"} placeholder="Search table…"
                       value={tableQuery} onChange={(e) => setTableQuery(e.target.value)} />
                   </div>
-                  <div className="mb-2 flex flex-wrap gap-1">
+                  <div className="mb-1 flex flex-wrap gap-1">
                     {([["all", `All (${tables.length})`], ["available", `Available (${availableCount})`],
                        ["occupied", `Occupied (${tables.length - availableCount})`]] as const).map(([k, l]) => (
                       <button key={k} onClick={() => setTableFilter(k)}
@@ -503,35 +535,58 @@ export default function POS() {
                       </button>
                     ))}
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {visibleTables.map((t) => (
-                      <button key={t.table}
-                        onClick={() => t.bills === 0 ? newOrder(t.table)
-                          : t.bills === 1 ? openTab(t.orders[0].order)
-                            : setChooser(chooser === t.table ? null : t.table)}
-                        className={"relative rounded-xl border p-2 text-center transition " + TILE[t.state] +
-                          (t.orders.some((b) => b.order === selected) || chooser === t.table ? " ring-2 ring-brand-600 ring-offset-1" :
-                            t.bills === 0 && selected === null && table === t.table ? " ring-2 ring-brand-600 ring-offset-1" : "")}>
-                        {t.bills > 1 && (
-                          <span className="absolute -right-1.5 -top-1.5 flex items-center gap-0.5 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                            <Users className="size-2.5" />{t.bills}
-                          </span>
+                  {areas.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {["All", ...areas].map((a) => (
+                        <button key={a} onClick={() => setAreaFilter(a)}
+                          className={"rounded-full px-2 py-0.5 text-[11px] " +
+                            (areaFilter === a ? "bg-zinc-800 font-medium text-white" : "bg-white text-zinc-500 ring-1 ring-zinc-200 hover:ring-zinc-400")}>
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {tableGroups.map(([groupName, group]) => (
+                    <div key={groupName ?? "_"} className="mb-2">
+                      {groupName && (
+                        <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{groupName}</h4>
+                      )}
+                      <div className="grid grid-cols-3 gap-2">
+                        {group.map((t) => (
+                          <button key={t.table}
+                            onClick={() => t.bills === 0 ? newOrder(t.table)
+                              : t.bills === 1 ? openTab(t.orders[0].order)
+                                : setChooser(chooser === t.table ? null : t.table)}
+                            className={"relative rounded-xl border p-2 text-center transition " + TILE[t.state] +
+                              (t.temp ? " border-dashed" : "") +
+                              (t.orders.some((b) => b.order === selected) || chooser === t.table ? " ring-2 ring-brand-600 ring-offset-1" :
+                                t.bills === 0 && selected === null && table === t.table ? " ring-2 ring-brand-600 ring-offset-1" : "")}>
+                            {t.bills > 1 && (
+                              <span className="absolute -right-1.5 -top-1.5 flex items-center gap-0.5 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                <Users className="size-2.5" />{t.bills}
+                              </span>
+                            )}
+                            {t.bills > 0 && t.since && (
+                              <span className="absolute right-1 top-1 text-[9px] font-semibold opacity-70">{ago(t.since)}</span>
+                            )}
+                            <div className="text-sm font-bold">{t.table}</div>
+                            <div className="text-[10px] opacity-70">
+                              {t.bills > 0
+                                ? <>₹{inr(t.order_total)}{t.guests ? <> · <Users className="inline size-2.5" />{t.guests}</> : null}</>
+                                : t.seats ? `${t.seats} seats` : "—"}
+                            </div>
+                          </button>
+                        ))}
+                        {groupName === null && visibleTables.length === 0 && (
+                          <p className="col-span-3 py-3 text-center text-xs text-zinc-400">No tables match.</p>
                         )}
-                        {t.bills > 0 && t.since && (
-                          <span className="absolute right-1 top-1 text-[9px] font-semibold opacity-70">{ago(t.since)}</span>
-                        )}
-                        <div className="text-sm font-bold">{t.table}</div>
-                        <div className="text-[10px] opacity-70">
-                          {t.bills > 0
-                            ? <>₹{inr(t.order_total)}{t.guests ? <> · <Users className="inline size-2.5" />{t.guests}</> : null}</>
-                            : t.seats ? `${t.seats} seats` : "—"}
-                        </div>
-                      </button>
-                    ))}
-                    {visibleTables.length === 0 && (
-                      <p className="col-span-3 py-3 text-center text-xs text-zinc-400">No tables match.</p>
-                    )}
-                  </div>
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={() => { newOrder(); setOrderType("Dine In"); setCustomTable(true) }}
+                    className="w-full rounded-xl border border-dashed border-zinc-300 px-2 py-1.5 text-xs font-medium text-zinc-500 transition hover:border-brand-500 hover:text-brand-700">
+                    <Plus className="mr-0.5 inline size-3.5" />Temp table
+                  </button>
                   {chooser && (() => {
                     const t = tables.find((x) => x.table === chooser)
                     if (!t) return null
@@ -591,9 +646,10 @@ export default function POS() {
                       </span>
                       <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
                         <span className="font-semibold">₹{inr(r.order_total)}</span>
-                        {r.paid ? <span className="rounded bg-emerald-50 px-1 text-[10px] font-medium text-emerald-700">{r.payment_mode}</span>
-                          : r.status === "Cancelled" ? <span className="rounded bg-rose-50 px-1 text-[10px] font-medium text-rose-600">✕</span>
-                            : null}
+                        {r.nc ? <span className="rounded bg-amber-50 px-1 text-[10px] font-bold text-amber-700">NC</span>
+                          : r.paid ? <span className="rounded bg-emerald-50 px-1 text-[10px] font-medium text-emerald-700">{r.payment_mode}</span>
+                            : r.status === "Cancelled" ? <span className="rounded bg-rose-50 px-1 text-[10px] font-medium text-rose-600">✕</span>
+                              : null}
                         <span className="text-zinc-400">{ago(r.modified)}</span>
                       </span>
                     </button>
@@ -720,6 +776,12 @@ export default function POS() {
 
             {selected && detail && (
               <>
+                {!!detail.nc && (
+                  <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                    <span className="font-bold">NC — COMPLIMENTARY</span>
+                    <span className="ml-1">auth: {detail.nc_authorized_by}{detail.nc_note ? ` · ${detail.nc_note}` : ""}</span>
+                  </div>
+                )}
                 {splitMode && (
                   <p className="mb-1 rounded-lg bg-brand-50 px-2 py-1 text-xs text-brand-700">
                     Tick the lines moving to the new bill.
@@ -823,6 +885,22 @@ export default function POS() {
               <div className="flex justify-between text-base font-bold"><span>Total</span><span className="tabular-nums">₹{inr2(grand)}</span></div>
             </div>
 
+            {ncOpen && selected && (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                <p className="mb-1 text-xs font-medium text-amber-800">Mark NC (no charge) — who authorized it?</p>
+                <div className="flex gap-1">
+                  <select className={inputCls + " !w-28 !py-1 text-xs"} value={ncBy} onChange={(e) => setNcBy(e.target.value)}>
+                    {["Captain", "Chef", "Manager", "GM", "Management", "Owner"].map((w) => <option key={w}>{w}</option>)}
+                  </select>
+                  <input autoFocus className={inputCls + " !py-1 text-xs"} placeholder="Reference (birthday, complaint #, promo…)"
+                    value={ncNote} onChange={(e) => setNcNote(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && saveNc()} />
+                  <Button variant="outline" className="!px-2 !py-1 text-xs font-semibold text-amber-700" disabled={busy} onClick={() => saveNc()}>NC</Button>
+                  <Button variant="ghost" className="!px-2 !py-1 text-xs" onClick={() => setNcOpen(false)}>✕</Button>
+                </div>
+              </div>
+            )}
+
             {cancelling && (
               <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 p-2">
                 <p className="mb-1 text-xs font-medium text-rose-700">Cancel this order — reason required</p>
@@ -861,6 +939,19 @@ export default function POS() {
                         onClick={() => { setMoreOpen(false); printBill() }}>
                         <Receipt className="size-3.5" />Print bill
                       </button>
+                      {detail.status !== "Delivered" && (
+                        detail.nc ? (
+                          <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-amber-700 hover:bg-amber-50"
+                            onClick={() => { setMoreOpen(false); saveNc(true) }}>
+                            <Tag className="size-3.5" />Remove NC
+                          </button>
+                        ) : (
+                          <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-amber-700 hover:bg-amber-50"
+                            onClick={() => { setMoreOpen(false); setNcOpen(true) }}>
+                            <Tag className="size-3.5" />Mark NC (comp)
+                          </button>
+                        )
+                      )}
                       <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50"
                         onClick={() => { setMoreOpen(false); setCancelling(true); setCancelReason("") }}>
                         <Ban className="size-3.5" />Cancel order
@@ -886,7 +977,8 @@ export default function POS() {
                   disabled={busy || (selected ? !detail : cart.length === 0)}
                   onClick={proceedToPay}>
                   <Wallet className="size-4" />
-                  {selected && detail?.room ? "Deliver & post to room" : "Proceed to pay"}
+                  {selected && detail?.nc ? "Close NC bill"
+                    : selected && detail?.room ? "Deliver & post to room" : "Proceed to pay"}
                   <kbd className="rounded bg-white/20 px-1 text-[10px]">F4</kbd>
                 </Button>
               )}
