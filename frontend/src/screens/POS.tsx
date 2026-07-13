@@ -123,7 +123,9 @@ const inputCls =
 function ago(ts?: string) {
   if (!ts) return ""
   const mins = Math.max(0, Math.round((Date.now() - new Date(ts.replace(" ", "T")).getTime()) / 60000))
-  return mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`
+  if (mins < 60) return `${mins}m`
+  if (mins < 600) return `${Math.floor(mins / 60)}h ${mins % 60}m`
+  return `${Math.round(mins / 60)}h` // keep long-running tags compact
 }
 
 export default function POS() {
@@ -557,7 +559,7 @@ export default function POS() {
                             onClick={() => t.bills === 0 ? newOrder(t.table)
                               : t.bills === 1 ? openTab(t.orders[0].order)
                                 : setChooser(chooser === t.table ? null : t.table)}
-                            className={"relative rounded-xl border p-2 text-center transition " + TILE[t.state] +
+                            className={"relative rounded-xl border p-2 text-left transition " + TILE[t.state] +
                               (t.temp ? " border-dashed" : "") +
                               (t.orders.some((b) => b.order === selected) || chooser === t.table ? " ring-2 ring-brand-600 ring-offset-1" :
                                 t.bills === 0 && selected === null && table === t.table ? " ring-2 ring-brand-600 ring-offset-1" : "")}>
@@ -566,14 +568,16 @@ export default function POS() {
                                 <Users className="size-2.5" />{t.bills}
                               </span>
                             )}
-                            {t.bills > 0 && t.since && (
-                              <span className="absolute right-1 top-1 text-[9px] font-semibold opacity-70">{ago(t.since)}</span>
-                            )}
-                            <div className="text-sm font-bold">{t.table}</div>
-                            <div className="text-[10px] opacity-70">
+                            <div className="flex items-baseline justify-between gap-1">
+                              <span className="truncate text-sm font-bold">{t.table}</span>
+                              {t.bills > 0 && t.since && (
+                                <span className="shrink-0 text-[9px] font-medium opacity-60">{ago(t.since)}</span>
+                              )}
+                            </div>
+                            <div className="truncate text-[10px] opacity-70">
                               {t.bills > 0
                                 ? <>₹{inr(t.order_total)}{t.guests ? <> · <Users className="inline size-2.5" />{t.guests}</> : null}</>
-                                : t.seats ? `${t.seats} seats` : "—"}
+                                : t.seats ? `${t.seats} seats` : " "}
                             </div>
                           </button>
                         ))}
