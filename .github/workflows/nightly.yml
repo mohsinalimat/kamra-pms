@@ -139,13 +139,27 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          # Pre-deploy self-heal: the containerd store fills the disk after
-          # ~15 image pulls, and a deploy that dies mid-way never reaches
-          # its post-deploy prune. Prune FIRST so a full disk can't wedge
-          # the channel (unused images only - running stacks are untouched).
+          # Pre-deploy self-heal: a deploy that dies mid-way never reaches
+          # its post-deploy prune, and image prune alone has proven too
+          # weak (4GB back on a 96GB-full disk). Show WHERE the space went,
+          # then clear every reclaimable pool: unused images, builder
+          # cache, dangling volumes, container logs, old journals. Running
+          # stacks and their named volumes are untouched.
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
-            "df -h / | tail -1; docker system prune -af 2>/dev/null | tail -1; df -h / | tail -1"
+            "${DEPLOY_USER:-root}@${DEPLOY_HOST}" bash -s <<'HEAL'
+          df -h / | tail -1
+          echo "--- disk breakdown ---"
+          du -xh -d1 /var/lib/docker 2>/dev/null | sort -h | tail -8
+          du -xh -d1 /var/lib/containerd 2>/dev/null | sort -h | tail -3
+          du -xh -d1 /var/log 2>/dev/null | sort -h | tail -3
+          echo "--- healing ---"
+          docker system prune -af 2>/dev/null | tail -1
+          docker builder prune -af 2>/dev/null | tail -1
+          docker volume ls -qf dangling=true | xargs -r docker volume rm 2>/dev/null || true
+          truncate -s 0 /var/lib/docker/containers/*/*-json.log 2>/dev/null || true
+          journalctl --vacuum-size=200M 2>/dev/null | tail -1 || true
+          df -h / | tail -1
+          HEAL
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
             "bash ~/kamra-deploy/redeploy.sh nightly"
