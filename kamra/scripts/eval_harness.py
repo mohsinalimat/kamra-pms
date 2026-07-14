@@ -37,11 +37,22 @@ def check(name):
 
 
 def setup():
-	# the governed agent user posts public/HK/laundry charges; sites
-	# installed before it moved into after_install may not have it
+	# the governed agent user posts public/HK/laundry charges. Role + user
+	# only - deliberately NOT seed_rbac_v2.ensure_agent_user(): its _grant
+	# writes custom DocPerms, and custom perms REPLACE the standard doctype
+	# perms, revoking other roles' access on a fresh (CI) site. The standard
+	# doctype JSONs already carry the Kamra Agent role.
+	if not frappe.db.exists("Role", "Kamra Agent"):
+		frappe.get_doc({
+			"doctype": "Role", "role_name": "Kamra Agent", "desk_access": 0,
+		}).insert(ignore_permissions=True)
 	if not frappe.db.exists("User", "agent@kamra.local"):
-		from kamra.scripts.seed_rbac_v2 import ensure_agent_user
-		ensure_agent_user()
+		frappe.get_doc({
+			"doctype": "User", "email": "agent@kamra.local",
+			"first_name": "Kamra", "last_name": "Agent", "enabled": 1,
+			"user_type": "System User", "send_welcome_email": 0,
+			"roles": [{"role": "Kamra Agent"}],
+		}).insert(ignore_permissions=True)
 	if not frappe.db.exists("Property", P):
 		frappe.get_doc({
 			"doctype": "Property", "property_name": P, "city": "Testville",
