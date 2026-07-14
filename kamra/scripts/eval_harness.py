@@ -37,12 +37,21 @@ def check(name):
 
 
 def setup():
+	# the governed agent user posts public/HK/laundry charges; sites
+	# installed before it moved into after_install may not have it
+	if not frappe.db.exists("User", "agent@kamra.local"):
+		from kamra.scripts.seed_rbac_v2 import ensure_agent_user
+		ensure_agent_user()
 	if not frappe.db.exists("Property", P):
 		frappe.get_doc({
 			"doctype": "Property", "property_name": P, "city": "Testville",
 			"gst_mode": "Slab", "gst_slab_threshold": 7500,
 			"gst_rate_low": 5, "gst_rate_high": 18,
 		}).insert(ignore_permissions=True)
+	# many tests intentionally stack same-day stays on this tiny property;
+	# a generous allowance keeps them off the type-capacity guard (t32
+	# asserts that guard on its own isolated property)
+	frappe.db.set_value("Property", P, "overbooking_pct", 400)
 	rt = frappe.get_doc({
 		"doctype": "Room Type", "property": P, "room_type_code": "EVL",
 		"room_type_name": "Eval Room", "base_price": 4000,
@@ -969,6 +978,10 @@ def t31():
 			"doctype": "Room", "property": P, "room_number": "E102",
 			"room_type": RT,
 		}).insert(ignore_permissions=True).name
+	else:
+		# a leaked E102 from an older run points at that run's room type;
+		# realign it so this run's capacity math counts both rooms
+		frappe.db.set_value("Room", lroom, "room_type", RT)
 	g = _guest("Eval Laundry", "+91 70000 00031")
 	res = _res(g, nowdate(), add_days(nowdate(), 2), lroom)
 	res.status = "Checked In"
@@ -1018,6 +1031,87 @@ def t31():
 	assert c2["total"] == 200, c2
 
 
+@check("revenue: overbooking allowance, hurdle premium & floor, position briefing")
+def t32():
+	from kamra import api
+	from kamra.pricing import demand_tier, forecast_occupancy, quote
+
+	# isolated property so demand math isn't polluted by other tests
+	P2 = "EVAL Yield Hotel"
+	if not frappe.db.exists("Property", P2):
+		frappe.get_doc({
+			"doctype": "Property", "property_name": P2, "city": "Testville",
+			"gst_mode": "Fixed", "gst_rate_low": 5, "gst_rate_high": 5,
+		}).insert(ignore_permissions=True)
+	rt = frappe.get_doc({
+		"doctype": "Room Type", "property": P2, "room_type_code": "YLD",
+		"room_type_name": "Yield Room", "base_price": 4000,
+		"base_occupancy": 2, "adults_capacity": 3, "children_capacity": 2,
+		"tax_percent": 5,
+	}).insert(ignore_permissions=True).name
+	rooms = [frappe.get_doc({
+		"doctype": "Room", "property": P2, "room_number": f"Y10{i}",
+		"room_type": rt,
+	}).insert(ignore_permissions=True).name for i in (1, 2)]
+
+	seq = {"n": 40}
+
+	def book(ci, co, room=None):
+		seq["n"] += 1
+		g = _guest(f"Eval Yield {seq['n']}", f"+91 70000 000{seq['n']}")
+		return frappe.get_doc({
+			"doctype": "Reservation", "property": P2, "guest": g,
+			"room_type": rt, "room": room, "check_in_date": ci,
+			"check_out_date": co, "adults": 2, "auto_price": 1,
+		}).insert(ignore_permissions=True)
+
+	# 2 rooms, 0% allowance: the third unassigned booking must bounce
+	book("2031-03-01", "2031-03-02", rooms[0])
+	book("2031-03-01", "2031-03-02")
+	try:
+		book("2031-03-01", "2031-03-02")
+		raise AssertionError("oversell beyond capacity accepted at 0%")
+	except frappe.exceptions.ValidationError:
+		pass
+	# 50% allowance lifts the ceiling to 3
+	frappe.db.set_value("Property", P2, "overbooking_pct", 50)
+	frappe.get_cached_doc("Property", P2)  # refresh cache
+	frappe.clear_document_cache("Property", P2)
+	third = book("2031-03-01", "2031-03-02")
+	try:
+		book("2031-03-01", "2031-03-02")
+		raise AssertionError("oversell beyond the allowance accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	# demand tier: occupancy is 100%+ on that date -> premium + hurdle bite
+	assert forecast_occupancy(P2, "2031-03-01") >= 100
+	api.save_hurdle_rate(P2, 80, premium_pct=25, min_rate=5200)
+	tier = demand_tier(P2, rt, "2031-03-01")
+	assert tier and tier["premium_pct"] == 25, tier
+	q = quote(P2, rt, "2031-03-01", "2031-03-02", 2, 0)
+	assert q["nightly"][0]["rate"] == 5200, q["nightly"]  # 4000*1.25=5000 -> floor 5200
+	assert q["nightly"][0]["demand_premium_pct"] == 25, q["nightly"]
+	# a quiet date carries no premium
+	q2 = quote(P2, rt, "2031-06-01", "2031-06-02", 2, 0)
+	assert q2["nightly"][0]["rate"] == 4000, q2["nightly"]
+	# manual rates can't undercut the hurdle while the tier is active
+	try:
+		api.set_room_rate(P2, rt, "2031-03-01", "2031-03-02", 4500)
+		raise AssertionError("manual rate under the hurdle accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	# position briefing: ETA/ETD flow into arrivals/departures + conflicts
+	api.set_stay_times(third.name, "13:00", None)
+	pb = api.position_briefing(P2, "2031-03-01")
+	assert pb["capacity"] == 2 and pb["overbooking_limit"] == 3, pb
+	assert pb["occupancy"] >= 100, pb
+	arr = [a for a in pb["arrivals"] if a["name"] == third.name]
+	assert arr and arr[0]["eta"] == "13:00", arr
+	assert pb["demand_tier"] and pb["demand_tier"]["premium_pct"] == 25, pb
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -1040,7 +1134,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

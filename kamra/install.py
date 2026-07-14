@@ -3,6 +3,16 @@ import frappe
 
 def after_install():
 	set_site_favicon()
+	ensure_agent_user()
+
+
+def ensure_agent_user():
+	"""The governed agent user must exist on every install - public
+	bookings, QR orders and housekeeping/laundry billing all post through
+	it. Without this, those flows fail on a fresh site until the RBAC seed
+	is run by hand."""
+	from kamra.scripts.seed_rbac_v2 import ensure_agent_user as ensure
+	ensure()
 
 
 def set_site_favicon():

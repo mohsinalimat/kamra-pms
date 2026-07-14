@@ -98,6 +98,20 @@ def set_room_rate(property: str, room_type: str, start_date: str,
 				f"the ceiling of ₹{float(rail.ceiling_price):,.0f}."
 			)
 
+	# the hurdle is the DYNAMIC floor: when demand tiers are active for any
+	# date in range, a manual rate can't undercut the minimum sell rate
+	from frappe.utils import date_diff as _dd
+	from kamra.pricing import demand_tier
+	for i in range(min(int(_dd(end_date, start_date)) + 1, 92)):
+		day = add_days(start_date, i)
+		tier = demand_tier(property, room_type, day)
+		if tier and tier["min_rate"] and rate < tier["min_rate"]:
+			frappe.throw(
+				f"Blocked by the hurdle rate: occupancy for {day} is "
+				f"{tier['occupancy']:.0f}%, so the minimum sell rate is "
+				f"₹{tier['min_rate']:,.0f} - ₹{rate:,.0f} undercuts it."
+			)
+
 	season = frappe.get_doc({
 		"doctype": "Season",
 		"property": property,
@@ -1970,6 +1984,7 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 		},
 		fields=["name", "room", "guest", "guest_name", "status",
 		        "check_in_date", "check_out_date", "is_day_use", "adults",
+		        "planned_check_in_time", "planned_check_out_time",
 		        "precheckin_status", "source", "booking_type", "company",
 		        "travel_agent", "group_booking"],
 	)
@@ -1997,10 +2012,54 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 	for r in rooms:
 		r["bookings"] = by_room.get(r.name, [])
 		r["blocks"] = blocks_by_room.get(r.name, [])
+
+	# changeover conflicts: same room turns over today and the incoming
+	# guest lands before (or within the hk buffer of) the outgoing one
+	conflicts = []
+	for r in rooms:
+		by_date_out = {str(b.check_out_date): b for b in r["bookings"]
+		               if b.planned_check_out_time}
+		for b in r["bookings"]:
+			out = by_date_out.get(str(b.check_in_date))
+			if not out or out.name == b.name or not b.planned_check_in_time:
+				continue
+			if str(b.planned_check_in_time) <= str(out.planned_check_out_time):
+				conflicts.append({
+					"room": r.name, "room_number": r.room_number,
+					"date": str(b.check_in_date),
+					"out_res": out.name, "out_guest": out.guest_name,
+					"etd": str(out.planned_check_out_time)[:5],
+					"in_res": b.name, "in_guest": b.guest_name,
+					"eta": str(b.planned_check_in_time)[:5],
+				})
+
+	# the day-by-day house position: sold vs capacity vs the overbooking
+	# ceiling, plus the demand tier the pricing engine is applying
+	from kamra.pricing import demand_tier, forecast_occupancy
+	prop_ob = float(frappe.get_cached_doc("Property", property)
+	                .get("overbooking_pct") or 0)
+	capacity = len(rooms)
+	position = []
+	for i in range(days):
+		d = str(add_days(start, i))
+		occ = forecast_occupancy(property, d)
+		sold = round(occ * capacity / 100) if capacity else 0
+		tier = demand_tier(property, "", d, occupancy=occ)
+		position.append({
+			"date": d, "sold": sold, "capacity": capacity,
+			"occupancy": occ,
+			"limit": int(capacity * (1 + prop_ob / 100)),
+			"overbooked": sold > capacity,
+			"premium_pct": tier["premium_pct"] if tier else 0,
+			"min_rate": tier["min_rate"] if tier else 0,
+		})
+
 	return {
 		"start": str(start), "days": days,
 		"dates": [str(add_days(start, i)) for i in range(days)],
 		"rooms": rooms,
+		"position": position,
+		"conflicts": conflicts,
 	}
 
 
@@ -2047,14 +2106,145 @@ def send_precheckin_link(reservation: str, channel: str = "WhatsApp"):
 
 @frappe.whitelist(methods=["POST"])
 @require_roles("Front Desk", "Kamra Agent")
+def set_stay_times(reservation: str, eta: str | None = None,
+                   etd: str | None = None):
+	"""Set the planned arrival (ETA) and departure (ETD) times for any stay.
+	These drive the hotel-position view on the tape chart: back-to-back
+	rooms conflict when the incoming guest lands before the outgoing one
+	leaves, and the day's arrival flow is planned around them."""
+	frappe.db.set_value("Reservation", reservation, {
+		"planned_check_in_time": eta or None,
+		"planned_check_out_time": etd or None,
+	})
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
 def set_day_use_times(reservation: str, from_time: str, to_time: str):
 	"""Set planned check-in/out times for a day-use booking (drives the hourly
 	tape view)."""
-	frappe.db.set_value("Reservation", reservation, {
-		"planned_check_in_time": from_time or None,
-		"planned_check_out_time": to_time or None,
+	return set_stay_times(reservation, from_time, to_time)
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def position_briefing(property: str, date: str | None = None):
+	"""The GM / front-desk position briefing - what the copilot reads out
+	at the morning meeting: today's occupancy against the overbooking
+	ceiling, arrivals with ETAs, departures with ETDs and balances,
+	back-to-back conflicts, the demand tier pricing is applying, and a
+	7-day outlook."""
+	from frappe.utils import getdate
+	from kamra.pricing import demand_tier, forecast_occupancy
+
+	d = str(getdate(date or nowdate()))
+	prop = frappe.get_cached_doc("Property", property)
+	capacity = frappe.db.count("Room", {"property": property})
+	ob_pct = float(prop.get("overbooking_pct") or 0)
+
+	arrivals = frappe.get_all(
+		"Reservation",
+		filters={"property": property, "check_in_date": d,
+		         "status": "Confirmed"},
+		fields=["name", "guest_name", "room", "room_type",
+		        "planned_check_in_time", "adults", "children",
+		        "precheckin_status", "company", "group_booking"],
+		order_by="planned_check_in_time asc")
+	departures = frappe.get_all(
+		"Reservation",
+		filters={"property": property, "check_out_date": d,
+		         "status": "Checked In"},
+		fields=["name", "guest_name", "room",
+		        "planned_check_out_time"],
+		order_by="planned_check_out_time asc")
+	for a in arrivals:
+		a["eta"] = str(a.planned_check_in_time)[:5] if a.planned_check_in_time else None
+		a["room_no"] = (a.room or "").split("-")[-1] or None
+	for dep in departures:
+		dep["etd"] = str(dep.planned_check_out_time)[:5] if dep.planned_check_out_time else None
+		dep["room_no"] = (dep.room or "").split("-")[-1]
+		folio = frappe.db.get_value(
+			"Folio", {"reservation": dep.name, "folio_type": "Guest"},
+			["balance"], as_dict=True)
+		dep["balance_due"] = float(folio.balance) if folio else 0
+
+	# back-to-back: departure and arrival share a room today and the times cross
+	conflicts = []
+	dep_by_room = {x.room: x for x in departures if x.room and x.etd}
+	for a in arrivals:
+		out = dep_by_room.get(a.room)
+		if out and a["eta"] and a["eta"] <= out["etd"]:
+			conflicts.append({
+				"room_no": out["room_no"], "out_guest": out.guest_name,
+				"etd": out["etd"], "in_guest": a.guest_name, "eta": a["eta"]})
+
+	outlook = []
+	for i in range(7):
+		day = str(add_days(d, i))
+		occ = forecast_occupancy(property, day)
+		tier = demand_tier(property, "", day, occupancy=occ)
+		outlook.append({"date": day, "occupancy": occ,
+		                "premium_pct": tier["premium_pct"] if tier else 0,
+		                "min_rate": tier["min_rate"] if tier else 0})
+
+	occ_today = outlook[0]["occupancy"]
+	return {
+		"date": d,
+		"occupancy": occ_today,
+		"sold": round(occ_today * capacity / 100) if capacity else 0,
+		"capacity": capacity,
+		"overbooking_pct": ob_pct,
+		"overbooking_limit": int(capacity * (1 + ob_pct / 100)),
+		"arrivals": arrivals,
+		"departures": departures,
+		"changeover_conflicts": conflicts,
+		"demand_tier": ({"premium_pct": outlook[0]["premium_pct"],
+		                 "min_rate": outlook[0]["min_rate"]}
+		                if outlook[0]["premium_pct"] or outlook[0]["min_rate"]
+		                else None),
+		"outlook": outlook,
+	}
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def hurdle_rates(property: str):
+	"""The demand tiers: at each occupancy threshold, the premium applied
+	and the minimum sell rate enforced."""
+	return frappe.get_all(
+		"Hurdle Rate", filters={"property": property, "disabled": 0},
+		fields=["name", "room_type", "occupancy_from", "premium_pct",
+		        "min_rate"],
+		order_by="occupancy_from asc")
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def save_hurdle_rate(property: str, occupancy_from: float,
+                     premium_pct: float = 0, min_rate: float = 0,
+                     room_type: str | None = None, name: str | None = None):
+	if not (0 <= float(occupancy_from) <= 100):
+		frappe.throw("Occupancy threshold must be between 0 and 100.")
+	if float(premium_pct or 0) < 0 or float(min_rate or 0) < 0:
+		frappe.throw("Premium and hurdle must not be negative.")
+	doc = (frappe.get_doc("Hurdle Rate", name) if name
+	       else frappe.new_doc("Hurdle Rate"))
+	doc.update({
+		"property": property, "room_type": room_type or None,
+		"occupancy_from": float(occupancy_from),
+		"premium_pct": float(premium_pct or 0),
+		"min_rate": float(min_rate or 0),
 	})
-	frappe.db.commit()
+	doc.save()
+	return {"ok": True, "name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def delete_hurdle_rate(name: str):
+	frappe.delete_doc("Hurdle Rate", name)
 	return {"ok": True}
 
 

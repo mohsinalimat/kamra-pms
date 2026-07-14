@@ -39,7 +39,8 @@
   "image",
   "sb_media",
   "media",
-  "disabled"
+  "disabled",
+  "overbooking_pct"
  ],
  "fields": [
   {
@@ -228,6 +229,12 @@
    "fieldtype": "Table",
    "label": "Media Gallery",
    "options": "Room Type Media"
+  },
+  {
+   "fieldname": "overbooking_pct",
+   "fieldtype": "Percent",
+   "label": "Overbooking Allowance %",
+   "description": "Overrides the property-wide allowance when set."
   }
  ],
  "grid_page_length": 50,

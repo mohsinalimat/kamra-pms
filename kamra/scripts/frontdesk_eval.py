@@ -211,10 +211,18 @@ def f8():
 	with at_the_desk():
 		_book("FD First", "+91 71000 00008", "2032-03-01", "2032-03-03")
 		_book("FD Second", "+91 71000 00009", "2032-03-01", "2032-03-03")
-		# two rooms exist, so both fit; the third guest finds no room
-		out = _book("FD Third", "+91 71000 00010", "2032-03-01", "2032-03-03")
+		# two rooms exist, so both fit; with no overbooking allowance the
+		# third guest is refused outright - the desk's options are the
+		# waitlist or a higher allowance in Settings
+		try:
+			_book("FD Third", "+91 71000 00010", "2032-03-01", "2032-03-03")
+			raise AssertionError("sold-out window accepted a third booking")
+		except frappe.exceptions.ValidationError:
+			pass
+		out = _book("FD Third", "+91 71000 00010", "2032-03-01",
+		            "2032-03-03", waitlist=1)
 		res = frappe.get_doc("Reservation", out["reservation"])
-		assert not res.room, "assigned a room in a sold-out window"
+		assert res.status == "Waitlist" and not res.room, res.status
 
 
 @check("blacklisted guest is refused with the reason")

@@ -5,7 +5,7 @@ outline: 2
 # REST API reference
 
 Every endpoint below is a whitelisted function — the same governed layer
-the UI and the AI use. **141 endpoints**, generated from the source
+the UI and the AI use. **146 endpoints**, generated from the source
 (`docs-site/gen_api.py`), so this page always matches the code.
 
 ## Calling convention
@@ -778,6 +778,21 @@ the desk to share. Marks when it went out so the arrivals board can show it.
 | `reservation` | yes |  |
 | `channel` | no | `'WhatsApp'` |
 
+### `kamra.api.set_stay_times`
+
+**POST** · roles: `Front Desk`, `Kamra Agent`
+
+Set the planned arrival (ETA) and departure (ETD) times for any stay.
+These drive the hotel-position view on the tape chart: back-to-back
+rooms conflict when the incoming guest lands before the outgoing one
+leaves, and the day's arrival flow is planned around them.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `reservation` | yes |  |
+| `eta` | no | `None` |
+| `etd` | no | `None` |
+
 ### `kamra.api.set_day_use_times`
 
 **POST** · roles: `Front Desk`, `Kamra Agent`
@@ -790,6 +805,53 @@ tape view).
 | `reservation` | yes |  |
 | `from_time` | yes |  |
 | `to_time` | yes |  |
+
+### `kamra.api.position_briefing`
+
+**GET/POST** · roles: `Front Desk`, `Finance`, `Kamra Agent`
+
+The GM / front-desk position briefing - what the copilot reads out
+at the morning meeting: today's occupancy against the overbooking
+ceiling, arrivals with ETAs, departures with ETDs and balances,
+back-to-back conflicts, the demand tier pricing is applying, and a
+7-day outlook.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `date` | no | `None` |
+
+### `kamra.api.hurdle_rates`
+
+**GET/POST** · roles: `Front Desk`, `Finance`, `Kamra Agent`
+
+The demand tiers: at each occupancy threshold, the premium applied
+and the minimum sell rate enforced.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+
+### `kamra.api.save_hurdle_rate`
+
+**POST** · roles: `Front Desk`, `Finance`, `Kamra Agent`
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `occupancy_from` | yes |  |
+| `premium_pct` | no | `0` |
+| `min_rate` | no | `0` |
+| `room_type` | no | `None` |
+| `name` | no | `None` |
+
+### `kamra.api.delete_hurdle_rate`
+
+**POST** · roles: `Front Desk`, `Finance`, `Kamra Agent`
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `name` | yes |  |
 
 ### `kamra.api.tape_chart_hourly`
 

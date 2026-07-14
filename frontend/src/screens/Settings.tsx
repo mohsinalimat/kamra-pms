@@ -438,6 +438,24 @@ export default function Settings() {
         }}
       />
 
+      <SettingsCard
+        title="Revenue controls"
+        description="How far the house may oversell, applied when unassigned bookings would exceed physical capacity."
+        specs={[{
+          field: "overbooking_pct",
+          label: "Overbooking allowance %",
+          type: "number",
+          hint: "0 = never oversell. Room types can override this on their own doctype.",
+        }]}
+        doc={prop}
+        onSave={async (changes) => {
+          await updateResource("Property", property, changes)
+          load()
+        }}
+      />
+
+      <HurdleRatesCard property={property} />
+
       <LaundryRatesCard property={property} />
 
       <Card>
@@ -623,6 +641,120 @@ function LaundryRatesCard({ property }: { property: string }) {
                     </button>
                     <button className="ml-2 text-xs text-zinc-400 hover:text-rose-600"
                       onClick={async () => { await call("kamra.laundry.delete_laundry_rate", { name: r.name }); load() }}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+interface HurdleTier {
+  name: string
+  room_type: string | null
+  occupancy_from: number
+  premium_pct: number
+  min_rate: number
+}
+
+/** Demand tiers: at each occupancy threshold, quotes carry a premium and
+ * manual rates can't undercut the hurdle (the minimum sell rate). */
+function HurdleRatesCard({ property }: { property: string }) {
+  const [tiers, setTiers] = useState<HurdleTier[]>([])
+  const [form, setForm] = useState<{ name?: string; from: string; premium: string; min: string } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    call<HurdleTier[]>("kamra.api.hurdle_rates", { property }).then(setTiers).catch(() => {})
+  }, [property])
+  useEffect(load, [load])
+
+  async function save() {
+    if (!form) return
+    setErr(null)
+    try {
+      await call("kamra.api.save_hurdle_rate", {
+        property, name: form.name || null, occupancy_from: form.from,
+        premium_pct: form.premium || 0, min_rate: form.min || 0,
+      })
+      setForm(null)
+      load()
+    } catch (e) {
+      setErr(serverError(e))
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Demand pricing (hurdle rates)</CardTitle>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            When forecast occupancy for a date crosses a threshold, quotes
+            carry the premium automatically and no rate may sell below the
+            hurdle. Guardrails still cap the extremes.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setForm({ from: "", premium: "", min: "" })}>
+          Add tier
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {err && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
+        {form && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 p-2">
+            <label className="flex items-center gap-1 text-sm text-zinc-600">
+              Occupancy ≥
+              <input className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="80" inputMode="numeric"
+                value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value.replace(/[^\d.]/g, "") })} autoFocus />
+              %
+            </label>
+            <label className="flex items-center gap-1 text-sm text-zinc-600">
+              Premium +
+              <input className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="15" inputMode="numeric"
+                value={form.premium} onChange={(e) => setForm({ ...form, premium: e.target.value.replace(/[^\d.]/g, "") })} />
+              %
+            </label>
+            <label className="flex items-center gap-1 text-sm text-zinc-600">
+              Hurdle ₹
+              <input className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="min rate" inputMode="numeric"
+                value={form.min} onChange={(e) => setForm({ ...form, min: e.target.value.replace(/[^\d.]/g, "") })} />
+            </label>
+            <Button disabled={!form.from} onClick={save}>Save</Button>
+            <Button variant="ghost" onClick={() => setForm(null)}>Cancel</Button>
+          </div>
+        )}
+        {tiers.length === 0 ? (
+          <p className="py-3 text-sm text-zinc-400">
+            No tiers yet — e.g. "at 80% occupancy, +15% premium, minimum ₹6,000".
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-zinc-400">
+                <th className="py-1.5">When occupancy ≥</th>
+                <th className="text-right">Premium</th>
+                <th className="text-right">Hurdle (min rate)</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map((t) => (
+                <tr key={t.name} className="border-t border-zinc-100">
+                  <td className="py-1.5 font-medium">{t.occupancy_from}%</td>
+                  <td className="text-right tabular-nums">{t.premium_pct ? `+${t.premium_pct}%` : "—"}</td>
+                  <td className="text-right tabular-nums">{t.min_rate ? `₹${t.min_rate.toLocaleString("en-IN")}` : "—"}</td>
+                  <td className="text-right">
+                    <button className="text-xs font-medium text-brand-700 hover:underline"
+                      onClick={() => setForm({ name: t.name, from: String(t.occupancy_from), premium: String(t.premium_pct || ""), min: String(t.min_rate || "") })}>
+                      Edit
+                    </button>
+                    <button className="ml-2 text-xs text-zinc-400 hover:text-rose-600"
+                      onClick={async () => { await call("kamra.api.delete_hurdle_rate", { name: t.name }); load() }}>
                       Delete
                     </button>
                   </td>

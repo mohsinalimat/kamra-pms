@@ -8,6 +8,46 @@ from frappe.utils import cint, date_diff, now_datetime
 
 
 class Reservation(Document):
+	def validate_type_capacity(self):
+		"""Room-type capacity with a controlled overbooking allowance.
+
+		The room-level overlap guard below stops physical double-booking;
+		this stops UNASSIGNED bookings quietly over-selling a category. The
+		allowance (room type override, else property-wide, default 0%) is a
+		revenue-management decision made in Settings - never implicit.
+		"""
+		# waitlisted stays hold no inventory - parking is always allowed
+		if self.status in ("Cancelled", "No Show", "Checked Out", "Waitlist"):
+			return
+		total = frappe.db.count("Room", {"room_type": self.room_type})
+		if not total:
+			return  # setup-time bookings before rooms exist
+		pct = float(frappe.db.get_value(
+			"Room Type", self.room_type, "overbooking_pct") or 0)
+		if not pct:
+			pct = float(frappe.get_cached_doc(
+				"Property", self.property).get("overbooking_pct") or 0)
+		limit = int(total * (1 + pct / 100))
+		from frappe.utils import add_days, date_diff
+		nights = max(1, date_diff(self.check_out_date, self.check_in_date))
+		for i in range(min(int(nights), 366)):
+			d = str(add_days(self.check_in_date, i))
+			cnt = frappe.db.sql(
+				"""SELECT COUNT(*) FROM `tabReservation`
+				   WHERE room_type = %(rt)s AND name != %(name)s
+				     AND status IN ('Confirmed', 'Checked In')
+				     AND check_in_date <= %(d)s
+				     AND GREATEST(check_out_date,
+				                  DATE_ADD(check_in_date, INTERVAL 1 DAY)) > %(d)s""",
+				{"rt": self.room_type, "name": self.name or "new", "d": d},
+			)[0][0]
+			if cnt + 1 > limit:
+				frappe.throw(
+					_("{0} is sold out for {1}: {2} of {3} rooms sold and "
+					  "the overbooking allowance ({4}%) is used up.").format(
+						self.room_type, d, cnt, total, pct),
+					title=_("Overbooking limit"))
+
 	def validate(self):
 		self.validate_dates()
 		self.nights = date_diff(self.check_out_date, self.check_in_date)
@@ -15,6 +55,7 @@ class Reservation(Document):
 		self.validate_occupancy()
 		self.validate_room_belongs_to_type()
 		self.validate_no_overlap()
+		self.validate_type_capacity()
 		self.validate_cancellation_path()
 		self.apply_pricing()
 

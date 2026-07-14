@@ -4,12 +4,23 @@ Everything below ships in the open-source app — no editions, no gates.
 
 ## Front desk
 
-Tape chart (rooms × dates, drag to move, hourly view for day-use), the
-Today board (arrivals/departures/in-house with payment chips), calendar
-selling by room type, group bookings with room blocks and pickup
+Tape chart (rooms × dates, drag to move, hourly view for day-use) with a
+live **house-position row** (sold/capacity per day, demand arrows,
+overbooking flags), **ETA/ETD on every stay** and automatic
+**changeover-conflict warnings** when an arrival lands before the room
+frees; the Today board (arrivals/departures/in-house with payment chips),
+calendar selling by room type, group bookings with room blocks and pickup
 tracking, **room blocks** for VIP/house-use/maintenance holds, waitlists
 with one-tap promote, self check-in links, and a **central reservations**
 screen that searches availability across every property you manage.
+
+**Revenue controls**: a per-property (or per-room-type) **overbooking
+allowance** enforced in code — unassigned bookings can never quietly
+oversell a category; **hurdle rates** — when forecast occupancy crosses a
+threshold, quotes carry a demand premium automatically and no rate (human
+or agent) may sell below the tier's minimum; and a **position briefing**
+the copilot reads to the GM: occupancy vs the overbooking ceiling,
+arrivals by ETA, departures with balances, conflicts and a 7-day outlook.
 
 ## Money
 

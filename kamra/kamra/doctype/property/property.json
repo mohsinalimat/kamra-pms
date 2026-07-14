@@ -71,7 +71,8 @@
   "meta_description",
   "og_image",
   "page_slug",
-  "disabled"
+  "disabled",
+  "overbooking_pct"
  ],
  "fields": [
   {
@@ -446,6 +447,12 @@
    "fieldname": "page_slug",
    "fieldtype": "Data",
    "label": "Page Slug"
+  },
+  {
+   "fieldname": "overbooking_pct",
+   "fieldtype": "Percent",
+   "label": "Overbooking Allowance %",
+   "description": "Sell unassigned bookings above physical capacity by this much (0 = never overbook). Room types can override."
   }
  ],
  "grid_page_length": 50,
