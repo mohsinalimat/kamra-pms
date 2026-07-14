@@ -11,7 +11,11 @@
   "item_name",
   "qty",
   "rate",
-  "amount"
+  "amount",
+  "instructions",
+  "kot_status",
+  "voided",
+  "void_reason"
  ],
  "fields": [
   {
@@ -49,6 +53,29 @@
    "in_list_view": 1,
    "label": "Amount",
    "read_only": 1
+  },
+  {
+   "fieldname": "instructions",
+   "fieldtype": "Data",
+   "label": "Instructions",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "kot_status",
+   "fieldtype": "Select",
+   "label": "KOT",
+   "options": "New\nFired\nPrepared",
+   "default": "New"
+  },
+  {
+   "fieldname": "voided",
+   "fieldtype": "Check",
+   "label": "Voided"
+  },
+  {
+   "fieldname": "void_reason",
+   "fieldtype": "Data",
+   "label": "Void Reason"
   }
  ],
  "grid_page_length": 50,

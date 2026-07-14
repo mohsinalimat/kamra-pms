@@ -10,6 +10,7 @@
  "field_order": [
   "property",
   "item_description",
+  "condition",
   "found_in_room",
   "column_break_a",
   "found_on",
@@ -35,6 +36,15 @@
    "in_list_view": 1,
    "label": "Item Description",
    "reqd": 1
+  },
+  {
+   "fieldname": "condition",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "Found\nMissing\nDamaged",
+   "default": "Found",
+   "in_list_view": 1,
+   "description": "Found = a guest's lost item picked up on the floor. Missing = reported missing from a room. Damaged = hotel property damaged."
   },
   {
    "fieldname": "found_in_room",

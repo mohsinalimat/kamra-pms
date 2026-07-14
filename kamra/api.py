@@ -8,7 +8,7 @@ import json
 
 import frappe
 from kamra.authz import require_it_admin, require_roles
-from frappe.utils import add_days, nowdate
+from frappe.utils import add_days, get_datetime, now_datetime, nowdate
 
 
 @frappe.whitelist(allow_guest=True)
@@ -96,6 +96,20 @@ def set_room_rate(property: str, room_type: str, start_date: str,
 			frappe.throw(
 				f"Blocked by guardrail {rail.name}: ₹{rate:,.0f} is above "
 				f"the ceiling of ₹{float(rail.ceiling_price):,.0f}."
+			)
+
+	# the hurdle is the DYNAMIC floor: when demand tiers are active for any
+	# date in range, a manual rate can't undercut the minimum sell rate
+	from frappe.utils import date_diff as _dd
+	from kamra.pricing import demand_tier
+	for i in range(min(int(_dd(end_date, start_date)) + 1, 92)):
+		day = add_days(start_date, i)
+		tier = demand_tier(property, room_type, day)
+		if tier and tier["min_rate"] and rate < tier["min_rate"]:
+			frappe.throw(
+				f"Blocked by the hurdle rate: occupancy for {day} is "
+				f"{tier['occupancy']:.0f}%, so the minimum sell rate is "
+				f"₹{tier['min_rate']:,.0f} - ₹{rate:,.0f} undercuts it."
 			)
 
 	season = frappe.get_doc({
@@ -457,13 +471,18 @@ def hk_queue(property: str):
 		filters={"property": property,
 		         "status": ("in", ["Pending", "In Progress"])},
 		fields=["name", "room", "task_type", "priority", "status", "notes",
-		        "creation"],
+		        "assigned_to_user", "assignment_status", "due_by", "creation"],
 		order_by="creation asc",
 	)
+	me = frappe.session.user
+	now_dt = now_datetime()
 	prio_rank = {"Urgent": 0, "High": 1, "Medium": 2, "Low": 3}
 	for t in tasks:
 		t["arrival_today"] = t.room in arriving_rooms
 		t["room_number"] = (t.room or "").split("-")[-1]
+		t["mine"] = bool(t.assigned_to_user) and t.assigned_to_user == me
+		t["claimable"] = not t.assigned_to_user
+		t["overdue"] = bool(t.due_by and get_datetime(t.due_by) < now_dt)
 	tasks.sort(key=lambda t: (
 		not t["arrival_today"],
 		0 if t.task_type == "Checkout Clean" else 1,
@@ -478,8 +497,51 @@ def hk_queue(property: str):
 		        "occupancy_status"],
 		order_by="room_number asc",
 	)
+
+	# guest context the housekeeper needs on the floor: who's in the room or
+	# arriving, whether they're a VIP, their requests and arrival timing
+	ctx = {}
+	stays = frappe.get_all(
+		"Reservation",
+		filters={"property": property, "room": ("is", "set"),
+		         "status": ("in", ["Confirmed", "Checked In"]),
+		         "check_in_date": ("<=", today), "check_out_date": (">=", today)},
+		fields=["room", "guest", "guest_name", "status", "special_requests",
+		        "eta", "check_in_date", "check_out_date"],
+	) + frappe.get_all(
+		"Reservation",
+		filters={"property": property, "room": ("is", "set"),
+		         "status": "Confirmed", "check_in_date": today},
+		fields=["room", "guest", "guest_name", "status", "special_requests",
+		        "eta", "check_in_date", "check_out_date"],
+	)
+	vips = set(frappe.get_all(
+		"Guest", filters={"name": ("in", [s.guest for s in stays if s.guest]), "vip": 1},
+		pluck="name")) if stays else set()
+	for s in stays:
+		c = ctx.setdefault(s.room, {})
+		if s.guest in vips:
+			c["vip"] = 1
+		if s.special_requests:
+			c["special_requests"] = s.special_requests
+		if str(s.check_in_date) == today:
+			c["arrival_today"] = 1
+			c["eta"] = str(s.eta or "")
+			c["arriving_guest"] = s.guest_name
+		if str(s.check_out_date) == today:
+			c["departure_today"] = 1
+		if s.status == "Checked In":
+			c["in_house_guest"] = s.guest_name
+
 	for r in rooms:
 		r["arrival_today"] = r.name in arriving_rooms
+		r.update(ctx.get(r.name, {}))
+	# tasks carry the same context so a card can show the VIP star inline
+	for t in tasks:
+		c = ctx.get(t.room, {})
+		t["vip"] = c.get("vip", 0)
+		t["special_requests"] = t.get("special_requests") or c.get("special_requests")
+		t["eta"] = c.get("eta")
 
 	return {"date": today, "tasks": tasks, "rooms": rooms}
 
@@ -500,6 +562,117 @@ def hk_update_task(task: str, status: str):
 		           rationale=f"{doc.task_type} for {doc.room} closed from mobile",
 		           channel="API")
 	return {"ok": True, "task": doc.name, "status": doc.status}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Housekeeping", "Kamra Agent")
+def hk_assign_task(task: str, user: str):
+	"""A supervisor hands a task to a specific housekeeper (awaits accept)."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	doc.assigned_to_user = user
+	doc.assignment_status = "Assigned"
+	doc.save()
+	from kamra.savings import log_action
+	log_action("hk_assign", "Housekeeping Task", doc.name, doc.property,
+	           rationale=f"{doc.task_type} {doc.room} → {user}")
+	return {"ok": True, "assignment_status": "Assigned", "assigned_to_user": user}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_claim_task(task: str):
+	"""A housekeeper takes an unassigned task from the pool for themselves."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	if doc.assigned_to_user and doc.assigned_to_user != frappe.session.user:
+		frappe.throw(f"Already taken by {doc.assigned_to_user}.")
+	doc.assigned_to_user = frappe.session.user
+	doc.assignment_status = "Accepted"
+	doc.save()
+	return {"ok": True, "assignment_status": "Accepted"}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_accept_task(task: str):
+	"""The assigned housekeeper accepts the task handed to them."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	doc.assignment_status = "Accepted"
+	if not doc.assigned_to_user:
+		doc.assigned_to_user = frappe.session.user
+	doc.save()
+	return {"ok": True, "assignment_status": "Accepted"}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_reject_task(task: str, reason: str = ""):
+	"""Decline a task - it drops back into the pool for someone else,
+	keeping the reason on record."""
+	doc = frappe.get_doc("Housekeeping Task", task)
+	who = doc.assigned_to_user or frappe.session.user
+	doc.assigned_to_user = None
+	doc.assignment_status = "Unassigned"
+	doc.reject_reason = f"{who}: {reason}" if reason else who
+	doc.save()
+	from kamra.savings import log_action
+	log_action("hk_reject", "Housekeeping Task", doc.name, doc.property,
+	           rationale=f"{who} declined {doc.task_type} {doc.room}: {reason}")
+	return {"ok": True, "assignment_status": "Unassigned"}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_log_item(property: str, item_description: str, condition: str = "Found",
+                room: str | None = None):
+	"""A floor housekeeper logs a lost/found/missing/damaged item from the
+	phone. Lands in the Lost & Found register for the desk to reconcile."""
+	doc = frappe.get_doc({
+		"doctype": "Lost And Found Item",
+		"property": property,
+		"item_description": item_description,
+		"condition": condition,
+		"found_in_room": room or None,
+		"found_on": nowdate(),
+		"found_by": frappe.session.user,
+		"status": "In Storage",
+	}).insert()
+	from kamra.savings import log_action
+	log_action("lost_found_logged", "Lost And Found Item", doc.name, property,
+	           rationale=f"{condition}: {item_description}"
+	                     + (f" in {room}" if room else ""))
+	return {"ok": True, "name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Housekeeping", "Front Desk", "Kamra Agent")
+def hk_post_consumable(room: str, charge_type: str, description: str,
+                       amount: float):
+	"""Housekeeping posts what they find in the room - minibar consumption or
+	laundry - onto the in-house guest's folio. Scoped to those two types so
+	the floor can't touch discounts, allowances or room charges."""
+	if charge_type not in ("Minibar", "Laundry"):
+		frappe.throw("Housekeeping can only post Minibar or Laundry.")
+	if float(amount) <= 0:
+		frappe.throw("Amount must be positive.")
+	res = frappe.db.get_value(
+		"Reservation",
+		{"room": room, "status": "Checked In"},
+		["name", "property"], as_dict=True)
+	if not res:
+		frappe.throw("No checked-in guest in that room to bill.")
+	# post through the governed agent user (same pattern as public bookings):
+	# the housekeeper is authorized above and scoped to two charge types, and
+	# GST is still resolved server-side. Attribution is stamped below.
+	me = frappe.session.user
+	frappe.set_user("agent@kamra.local")
+	try:
+		out = post_stay_charge(res.name, charge_type, description, float(amount))
+	finally:
+		frappe.set_user(me)
+	from kamra.savings import log_action
+	log_action("hk_charge", "Folio", out.get("folio"), res.property,
+	           rationale=f"{charge_type} ₹{amount} to {room} ({description})")
+	return {"ok": True, "folio": out.get("folio"), "balance": out.get("balance")}
 
 
 @frappe.whitelist()
@@ -600,6 +773,10 @@ def add_folio_charge(folio: str, charge_type: str, description: str,
 	if int(is_alcohol or 0) and doc.folio_type in ("Company", "Group"):
 		frappe.throw("Alcohol cannot be billed to a company folio - "
 		             "post it to the guest folio.")
+	# tax is the hotel's rule, not the caller's guess - without this an
+	# F&B/minibar charge posted without a rate lands on the bill untaxed
+	gst_rate = _resolve_charge_gst(doc.property, charge_type, description,
+	                               int(is_alcohol or 0), float(gst_rate or 0))
 	doc.append("charges", {
 		"posting_date": posting_date or nowdate(),
 		"charge_type": charge_type,
@@ -1409,6 +1586,25 @@ def find_reservations(property: str, query: str | None = None,
 
 
 @frappe.whitelist()
+@require_roles("Front Desk", "Finance", "Revenue Manager", "Kamra Agent")
+def find_invoices(property: str, query: str | None = None, limit: int = 8):
+	"""Resolve an invoice number (or partial) to its folio and stay, so the
+	command palette can jump straight from 'INV-KDP-26-00042' to the bill."""
+	q = (query or "").strip()
+	if not q:
+		return []
+	rows = frappe.get_all(
+		"Folio",
+		filters={"property": property, "invoice_number": ["like", f"%{q}%"]},
+		fields=["name", "invoice_number", "reservation", "guest",
+		        "guest_name", "grand_total", "status", "folio_type"],
+		order_by="modified desc",
+		limit=int(limit or 8),
+	)
+	return rows
+
+
+@frappe.whitelist()
 @require_roles("Front Desk", "Kamra Agent", "Finance", "Revenue Manager")
 def reservation_detail(reservation: str):
 	"""Everything about one booking in a single call - stay, money, guest,
@@ -1788,6 +1984,7 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 		},
 		fields=["name", "room", "guest", "guest_name", "status",
 		        "check_in_date", "check_out_date", "is_day_use", "adults",
+		        "planned_check_in_time", "planned_check_out_time",
 		        "precheckin_status", "source", "booking_type", "company",
 		        "travel_agent", "group_booking"],
 	)
@@ -1800,12 +1997,69 @@ def tape_chart(property: str, start_date: str | None = None, days: int = 14):
 	for b in bookings:
 		b["vip"] = 1 if b.guest in vip else 0
 		by_room.setdefault(b.room, []).append(b)
+	# rooms held out of sale (house use, VIP, maintenance) draw as bands too
+	blocks = frappe.get_all(
+		"Room Block",
+		filters={
+			"property": property, "block_status": "Active",
+			"from_date": ("<", end), "to_date": (">", start),
+		},
+		fields=["name", "room", "reason", "from_date", "to_date", "note"],
+	)
+	blocks_by_room = {}
+	for k in blocks:
+		blocks_by_room.setdefault(k.room, []).append(k)
 	for r in rooms:
 		r["bookings"] = by_room.get(r.name, [])
+		r["blocks"] = blocks_by_room.get(r.name, [])
+
+	# changeover conflicts: same room turns over today and the incoming
+	# guest lands before (or within the hk buffer of) the outgoing one
+	conflicts = []
+	for r in rooms:
+		by_date_out = {str(b.check_out_date): b for b in r["bookings"]
+		               if b.planned_check_out_time}
+		for b in r["bookings"]:
+			out = by_date_out.get(str(b.check_in_date))
+			if not out or out.name == b.name or not b.planned_check_in_time:
+				continue
+			if str(b.planned_check_in_time) <= str(out.planned_check_out_time):
+				conflicts.append({
+					"room": r.name, "room_number": r.room_number,
+					"date": str(b.check_in_date),
+					"out_res": out.name, "out_guest": out.guest_name,
+					"etd": str(out.planned_check_out_time)[:5],
+					"in_res": b.name, "in_guest": b.guest_name,
+					"eta": str(b.planned_check_in_time)[:5],
+				})
+
+	# the day-by-day house position: sold vs capacity vs the overbooking
+	# ceiling, plus the demand tier the pricing engine is applying
+	from kamra.pricing import demand_tier, forecast_occupancy
+	prop_ob = float(frappe.get_cached_doc("Property", property)
+	                .get("overbooking_pct") or 0)
+	capacity = len(rooms)
+	position = []
+	for i in range(days):
+		d = str(add_days(start, i))
+		occ = forecast_occupancy(property, d)
+		sold = round(occ * capacity / 100) if capacity else 0
+		tier = demand_tier(property, "", d, occupancy=occ)
+		position.append({
+			"date": d, "sold": sold, "capacity": capacity,
+			"occupancy": occ,
+			"limit": int(capacity * (1 + prop_ob / 100)),
+			"overbooked": sold > capacity,
+			"premium_pct": tier["premium_pct"] if tier else 0,
+			"min_rate": tier["min_rate"] if tier else 0,
+		})
+
 	return {
 		"start": str(start), "days": days,
 		"dates": [str(add_days(start, i)) for i in range(days)],
 		"rooms": rooms,
+		"position": position,
+		"conflicts": conflicts,
 	}
 
 
@@ -1852,14 +2106,145 @@ def send_precheckin_link(reservation: str, channel: str = "WhatsApp"):
 
 @frappe.whitelist(methods=["POST"])
 @require_roles("Front Desk", "Kamra Agent")
+def set_stay_times(reservation: str, eta: str | None = None,
+                   etd: str | None = None):
+	"""Set the planned arrival (ETA) and departure (ETD) times for any stay.
+	These drive the hotel-position view on the tape chart: back-to-back
+	rooms conflict when the incoming guest lands before the outgoing one
+	leaves, and the day's arrival flow is planned around them."""
+	frappe.db.set_value("Reservation", reservation, {
+		"planned_check_in_time": eta or None,
+		"planned_check_out_time": etd or None,
+	})
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
 def set_day_use_times(reservation: str, from_time: str, to_time: str):
 	"""Set planned check-in/out times for a day-use booking (drives the hourly
 	tape view)."""
-	frappe.db.set_value("Reservation", reservation, {
-		"planned_check_in_time": from_time or None,
-		"planned_check_out_time": to_time or None,
+	return set_stay_times(reservation, from_time, to_time)
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def position_briefing(property: str, date: str | None = None):
+	"""The GM / front-desk position briefing - what the copilot reads out
+	at the morning meeting: today's occupancy against the overbooking
+	ceiling, arrivals with ETAs, departures with ETDs and balances,
+	back-to-back conflicts, the demand tier pricing is applying, and a
+	7-day outlook."""
+	from frappe.utils import getdate
+	from kamra.pricing import demand_tier, forecast_occupancy
+
+	d = str(getdate(date or nowdate()))
+	prop = frappe.get_cached_doc("Property", property)
+	capacity = frappe.db.count("Room", {"property": property})
+	ob_pct = float(prop.get("overbooking_pct") or 0)
+
+	arrivals = frappe.get_all(
+		"Reservation",
+		filters={"property": property, "check_in_date": d,
+		         "status": "Confirmed"},
+		fields=["name", "guest_name", "room", "room_type",
+		        "planned_check_in_time", "adults", "children",
+		        "precheckin_status", "company", "group_booking"],
+		order_by="planned_check_in_time asc")
+	departures = frappe.get_all(
+		"Reservation",
+		filters={"property": property, "check_out_date": d,
+		         "status": "Checked In"},
+		fields=["name", "guest_name", "room",
+		        "planned_check_out_time"],
+		order_by="planned_check_out_time asc")
+	for a in arrivals:
+		a["eta"] = str(a.planned_check_in_time)[:5] if a.planned_check_in_time else None
+		a["room_no"] = (a.room or "").split("-")[-1] or None
+	for dep in departures:
+		dep["etd"] = str(dep.planned_check_out_time)[:5] if dep.planned_check_out_time else None
+		dep["room_no"] = (dep.room or "").split("-")[-1]
+		folio = frappe.db.get_value(
+			"Folio", {"reservation": dep.name, "folio_type": "Guest"},
+			["balance"], as_dict=True)
+		dep["balance_due"] = float(folio.balance) if folio else 0
+
+	# back-to-back: departure and arrival share a room today and the times cross
+	conflicts = []
+	dep_by_room = {x.room: x for x in departures if x.room and x.etd}
+	for a in arrivals:
+		out = dep_by_room.get(a.room)
+		if out and a["eta"] and a["eta"] <= out["etd"]:
+			conflicts.append({
+				"room_no": out["room_no"], "out_guest": out.guest_name,
+				"etd": out["etd"], "in_guest": a.guest_name, "eta": a["eta"]})
+
+	outlook = []
+	for i in range(7):
+		day = str(add_days(d, i))
+		occ = forecast_occupancy(property, day)
+		tier = demand_tier(property, "", day, occupancy=occ)
+		outlook.append({"date": day, "occupancy": occ,
+		                "premium_pct": tier["premium_pct"] if tier else 0,
+		                "min_rate": tier["min_rate"] if tier else 0})
+
+	occ_today = outlook[0]["occupancy"]
+	return {
+		"date": d,
+		"occupancy": occ_today,
+		"sold": round(occ_today * capacity / 100) if capacity else 0,
+		"capacity": capacity,
+		"overbooking_pct": ob_pct,
+		"overbooking_limit": int(capacity * (1 + ob_pct / 100)),
+		"arrivals": arrivals,
+		"departures": departures,
+		"changeover_conflicts": conflicts,
+		"demand_tier": ({"premium_pct": outlook[0]["premium_pct"],
+		                 "min_rate": outlook[0]["min_rate"]}
+		                if outlook[0]["premium_pct"] or outlook[0]["min_rate"]
+		                else None),
+		"outlook": outlook,
+	}
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def hurdle_rates(property: str):
+	"""The demand tiers: at each occupancy threshold, the premium applied
+	and the minimum sell rate enforced."""
+	return frappe.get_all(
+		"Hurdle Rate", filters={"property": property, "disabled": 0},
+		fields=["name", "room_type", "occupancy_from", "premium_pct",
+		        "min_rate"],
+		order_by="occupancy_from asc")
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def save_hurdle_rate(property: str, occupancy_from: float,
+                     premium_pct: float = 0, min_rate: float = 0,
+                     room_type: str | None = None, name: str | None = None):
+	if not (0 <= float(occupancy_from) <= 100):
+		frappe.throw("Occupancy threshold must be between 0 and 100.")
+	if float(premium_pct or 0) < 0 or float(min_rate or 0) < 0:
+		frappe.throw("Premium and hurdle must not be negative.")
+	doc = (frappe.get_doc("Hurdle Rate", name) if name
+	       else frappe.new_doc("Hurdle Rate"))
+	doc.update({
+		"property": property, "room_type": room_type or None,
+		"occupancy_from": float(occupancy_from),
+		"premium_pct": float(premium_pct or 0),
+		"min_rate": float(min_rate or 0),
 	})
-	frappe.db.commit()
+	doc.save()
+	return {"ok": True, "name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Finance", "Kamra Agent")
+def delete_hurdle_rate(name: str):
+	frappe.delete_doc("Hurdle Rate", name)
 	return {"ok": True}
 
 
@@ -2012,7 +2397,8 @@ def booking_options(property: str):
 	return {
 		"room_types": frappe.get_all(
 			"Room Type", filters={"property": property, "disabled": 0},
-			fields=["name", "room_type_name", "base_price", "adults_capacity"],
+			fields=["name", "room_type_name", "base_price",
+			        "adults_capacity", "children_capacity"],
 			order_by="base_price asc",
 		),
 		"meal_plans": frappe.get_all(
@@ -2102,6 +2488,8 @@ def create_booking(property: str, room_type: str, check_in_date: str,
 
 	waitlist=1 parks the stay with no room and status Waitlist - for dates
 	that are sold out or restricted; promote it later when a room frees."""
+	from kamra.crs import assert_property_access
+	assert_property_access(property)
 	if guest:
 		if not frappe.db.exists("Guest", guest):
 			frappe.throw(f"Guest profile {guest} not found.")
@@ -2371,6 +2759,13 @@ def _available_rooms_raw(property: str, room_type: str, check_in_date: str,
 			  AND GREATEST(b.check_out_date,
 			               DATE_ADD(b.check_in_date, INTERVAL 1 DAY)) > %(check_in)s
 		  )
+		  AND NOT EXISTS (
+			SELECT 1 FROM `tabRoom Block` k
+			WHERE k.room = r.name
+			  AND k.block_status = 'Active'
+			  AND k.from_date < %(check_out)s
+			  AND k.to_date > %(check_in)s
+		  )
 		ORDER BY r.room_number
 		""",
 		{
@@ -2381,6 +2776,66 @@ def _available_rooms_raw(property: str, room_type: str, check_in_date: str,
 		},
 		as_dict=True,
 	)
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
+def room_blocks(property: str, active_only: int = 1):
+	"""Rooms held out of sale (house use, VIP, maintenance)."""
+	filters = {"property": property}
+	if int(active_only or 0):
+		filters["block_status"] = "Active"
+	rows = frappe.get_all(
+		"Room Block", filters=filters,
+		fields=["name", "room", "reason", "from_date", "to_date",
+		        "block_status", "note", "released_by", "released_on"],
+		order_by="from_date asc",
+	)
+	nums = {r.name: r.room_number for r in frappe.get_all(
+		"Room", filters={"property": property},
+		fields=["name", "room_number"])}
+	for r in rows:
+		r["room_number"] = nums.get(r.room, r.room)
+	return rows
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def create_room_block(property: str, room: str, from_date: str,
+                      to_date: str, reason: str = "House Use",
+                      note: str | None = None):
+	"""Hold a room out of sale for a date range. Refused if the room is
+	already booked in that window (move the guest first)."""
+	doc = frappe.get_doc({
+		"doctype": "Room Block",
+		"property": property,
+		"room": room,
+		"from_date": from_date,
+		"to_date": to_date,
+		"reason": reason,
+		"note": note or None,
+		"block_status": "Active",
+	})
+	doc.insert()
+	from kamra.savings import log_action
+	log_action("room_block", "Room Block", doc.name, property,
+	           rationale=f"{reason}: {room} {from_date}→{to_date}")
+	return {"name": doc.name}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def release_room_block(name: str):
+	"""Free a held room before its end date (the room returns to sale)."""
+	doc = frappe.get_doc("Room Block", name)
+	doc.block_status = "Released"
+	doc.released_by = frappe.session.user
+	doc.released_on = frappe.utils.now_datetime()
+	doc.save()
+	from kamra.savings import log_action
+	log_action("room_unblock", "Room Block", doc.name, doc.property,
+	           rationale=f"released {doc.room}")
+	return {"name": doc.name, "block_status": "Released"}
 
 
 @frappe.whitelist()

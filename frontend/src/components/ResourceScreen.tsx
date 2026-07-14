@@ -13,14 +13,16 @@ import {
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
+import ImageField from "./ImageField"
 
 export interface FieldSpec {
   field: string
   label: string
-  type: "data" | "int" | "float" | "currency" | "select" | "check" | "date" | "link" | "readonly"
+  type: "data" | "int" | "float" | "currency" | "select" | "check" | "date" | "link" | "readonly" | "image"
   options?: string[] // for select
   linkDoctype?: string // for link
   required?: boolean
+  hint?: string // for image: recommended size/format
 }
 
 export interface ScreenConfig {
@@ -129,6 +131,14 @@ function FieldInput(props: {
     case "readonly":
       return (
         <input className={inputCls} disabled value={String(value ?? "")} />
+      )
+    case "image":
+      return (
+        <ImageField
+          hint={spec.hint || "JPG/PNG/WebP · under 1 MB"}
+          value={String(value ?? "")}
+          onChange={(url) => onChange(url)}
+        />
       )
     default:
       return (

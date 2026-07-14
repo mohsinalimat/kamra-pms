@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams } from "react-router-dom"
 import { Globe, Plus, Trash2, Eye } from "lucide-react"
 
 import { getCurrentProperty, frappeFetch } from "../lib/api"
+import ImageField from "../components/ImageField"
+import { PRESETS, accentHex } from "../lib/accents"
 import { serverError, updateResource } from "../lib/resource"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
@@ -16,7 +18,6 @@ const inputCls =
 export default function BookingEngine() {
   const property = getCurrentProperty()
   const { section = "profile" } = useParams()
-  const navigate = useNavigate()
 
   const [doc, setDoc] = useState<Doc | null>(null)
   const [busy, setBusy] = useState(false)
@@ -78,6 +79,7 @@ export default function BookingEngine() {
     { id: "amenities", label: "Amenities" },
     { id: "photos", label: "Photos" },
     { id: "policies", label: "Policies" },
+    { id: "payments", label: "Payments" },
     { id: "faq", label: "FAQ" },
     { id: "seo", label: "SEO" },
   ]
@@ -119,29 +121,10 @@ export default function BookingEngine() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-4">
-        {/* Navigation panel */}
-        <div className="space-y-1">
-          {sections.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => {
-                setState("idle")
-                navigate(`/booking-settings/${s.id}`)
-              }}
-              className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
-                section === s.id
-                  ? "bg-brand-600 text-white shadow-sm"
-                  : "text-zinc-600 hover:bg-zinc-100"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Dynamic section fields */}
-        <div className="md:col-span-3">
+      {/* The app sidebar already lists the sections, so this screen just
+          renders the active one (from the URL) full-width - no second nav. */}
+      <div>
+        <div>
           <Card>
             <CardHeader>
               <CardTitle>{sections.find((s) => s.id === section)?.label}</CardTitle>
@@ -358,29 +341,71 @@ export default function BookingEngine() {
 
               {section === "photos" && (
                 <div className="space-y-4">
-                  <label className="block">
-                    <span className="mb-1 block text-sm font-medium text-zinc-600">Logo Image URL</span>
-                    <input
-                      className={inputCls}
-                      placeholder="https://…/logo.png"
-                      value={doc.logo_url ?? ""}
-                      onChange={(e) => updateField("logo_url", e.target.value)}
-                    />
-                  </label>
+                  <ImageField
+                    label="Logo"
+                    hint="Square, 512×512px · PNG or SVG with a transparent background. Shown on the booking page and invoices."
+                    accept="image/png,image/svg+xml,image/webp"
+                    value={doc.logo_url ?? ""}
+                    onChange={(v) => updateField("logo_url", v)}
+                  />
 
-                  <label className="block">
-                    <span className="mb-1 block text-sm font-medium text-zinc-600">Hero Showcase Image URL</span>
-                    <input
-                      className={inputCls}
-                      placeholder="https://…/hero.jpg"
-                      value={doc.hero_image ?? ""}
-                      onChange={(e) => updateField("hero_image", e.target.value)}
-                    />
-                  </label>
+                  <ImageField
+                    label="Hero showcase image"
+                    hint="1920×1080px (16:9 landscape) · JPG or WebP, under 2 MB. The big photo at the top of the booking page."
+                    value={doc.hero_image ?? ""}
+                    onChange={(v) => updateField("hero_image", v)}
+                  />
+
+                  <div className="block">
+                    <span className="mb-1 block text-sm font-medium text-zinc-600">
+                      Booking page accent
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="color"
+                        aria-label="Accent colour"
+                        className="size-10 cursor-pointer rounded-lg border border-zinc-300 bg-white p-0.5"
+                        value={accentHex(doc.brand_accent)}
+                        onChange={(e) => updateField("brand_accent", e.target.value)}
+                      />
+                      <input
+                        className={inputCls + " !w-32 font-mono"}
+                        placeholder="#0f6b54"
+                        value={doc.brand_accent ?? ""}
+                        onChange={(e) => updateField("brand_accent", e.target.value)}
+                      />
+                      <span className="text-xs text-zinc-400">or a quick preset:</span>
+                      {PRESETS.map((p) => (
+                        <button
+                          key={p.name}
+                          type="button"
+                          title={p.name}
+                          aria-label={p.name}
+                          className={
+                            "size-6 rounded-full border-2 " +
+                            (accentHex(doc.brand_accent).toLowerCase() === p.hex
+                              ? "border-zinc-800"
+                              : "border-white shadow")
+                          }
+                          style={{ background: p.hex }}
+                          onClick={() => updateField("brand_accent", p.hex)}
+                        />
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Buttons, links and highlights on the guest page take this
+                      colour — pick any hex to match the hotel's branding.
+                    </p>
+                  </div>
 
                   <div className="border-t border-zinc-100 pt-4">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-semibold text-zinc-700">Photo Gallery</span>
+                      <span className="text-sm font-semibold text-zinc-700">
+                        Photo Gallery
+                        <span className="ml-2 text-xs font-normal text-zinc-400">
+                          1600×900px (16:9), JPG/WebP — same shape keeps the grid tidy
+                        </span>
+                      </span>
                       <Button
                         variant="outline"
                         onClick={() => {
@@ -395,17 +420,19 @@ export default function BookingEngine() {
                     <div className="space-y-2">
                       {(doc.gallery || []).map((photo: any, index: number) => (
                         <div key={index} className="flex gap-2">
-                          <input
-                            className="flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
-                            placeholder="https://…/photo.jpg"
-                            value={photo.url ?? ""}
-                            onChange={(e) => {
-                              const gallery = (doc.gallery || []).map((g: any, idx: number) =>
-                                idx === index ? { ...g, url: e.target.value } : g
-                              )
-                              updateField("gallery", gallery)
-                            }}
-                          />
+                          <div className="min-w-0 flex-1">
+                            <ImageField
+                              hint=""
+                              placeholder="Upload, or paste a photo URL"
+                              value={photo.url ?? ""}
+                              onChange={(v) => {
+                                const gallery = (doc.gallery || []).map((g: any, idx: number) =>
+                                  idx === index ? { ...g, url: v } : g
+                                )
+                                updateField("gallery", gallery)
+                              }}
+                            />
+                          </div>
                           <input
                             className="w-48 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm"
                             placeholder="Caption"
@@ -442,6 +469,64 @@ export default function BookingEngine() {
                           ))}
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {section === "payments" && (
+                <div className="space-y-4">
+                  <p className="text-sm text-zinc-500">
+                    What guests pay online when booking on your public page.
+                    Existing bookings keep the terms they were made under - a
+                    change here only affects new bookings.
+                  </p>
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium text-zinc-600">
+                      Collect on booking
+                    </span>
+                    <select
+                      className={inputCls}
+                      value={doc.booking_payment_mode ?? "Pay at hotel"}
+                      onChange={(e) => updateField("booking_payment_mode", e.target.value)}
+                    >
+                      <option>Pay at hotel</option>
+                      <option>Advance percent</option>
+                      <option>Registration fee</option>
+                      <option>Full online</option>
+                    </select>
+                  </label>
+                  {doc.booking_payment_mode === "Advance percent" && (
+                    <label className="block max-w-xs">
+                      <span className="mb-1 block text-sm font-medium text-zinc-600">
+                        Advance percentage
+                      </span>
+                      <input
+                        type="number" min={0} max={100} className={inputCls}
+                        value={doc.advance_percent ?? ""}
+                        onChange={(e) => updateField("advance_percent", Number(e.target.value))}
+                      />
+                      <span className="mt-1 block text-xs text-zinc-400">
+                        Collected upfront; the rest is paid at the hotel.
+                      </span>
+                    </label>
+                  )}
+                  {doc.booking_payment_mode === "Registration fee" && (
+                    <label className="block max-w-xs">
+                      <span className="mb-1 block text-sm font-medium text-zinc-600">
+                        Registration fee (₹)
+                      </span>
+                      <input
+                        type="number" min={0} className={inputCls}
+                        value={doc.registration_fee ?? ""}
+                        onChange={(e) => updateField("registration_fee", Number(e.target.value))}
+                      />
+                    </label>
+                  )}
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Online collection uses whatever payment gateway is configured
+                    in the Payments app (Razorpay, Stripe, etc.). Until a gateway
+                    is connected, the advance is recorded as due and settled at
+                    the desk.
                   </div>
                 </div>
               )}
@@ -653,15 +738,12 @@ export default function BookingEngine() {
                   </label>
 
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-1 block text-sm font-medium text-zinc-600">OG Image URL (OpenGraph share card)</span>
-                      <input
-                        className={inputCls}
-                        placeholder="https://…/og_banner.jpg"
-                        value={doc.og_image ?? ""}
-                        onChange={(e) => updateField("og_image", e.target.value)}
-                      />
-                    </label>
+                    <ImageField
+                      label="OG image (share card)"
+                      hint="Exactly 1200×630px · JPG or PNG. What WhatsApp, Google and social previews show."
+                      value={doc.og_image ?? ""}
+                      onChange={(v) => updateField("og_image", v)}
+                    />
                     <label className="block">
                       <span className="mb-1 block text-sm font-medium text-zinc-600">Page Slug Prefix</span>
                       <input

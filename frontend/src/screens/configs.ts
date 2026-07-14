@@ -203,6 +203,37 @@ export const venuesConfig: ScreenConfig = {
   ],
 }
 
+export const roomBlocksConfig: ScreenConfig = {
+  doctype: "Room Block",
+  title: "Room Blocks",
+  description:
+    "Hold rooms out of sale for house use, VIPs, owners or maintenance. Blocked rooms don't show as available and won't sell.",
+  searchFields: ["room", "note"],
+  filters: [
+    { field: "reason", label: "Reason", options: ["House Use", "VIP Hold", "Owner", "Maintenance", "Other"] },
+    { field: "block_status", label: "Status", options: ["Active", "Released"] },
+  ],
+  pageSize: 25,
+  propertyScoped: true,
+  orderBy: "from_date asc",
+  columns: [
+    { field: "room", label: "Room" },
+    { field: "reason", label: "Reason", badge: true },
+    { field: "from_date", label: "From" },
+    { field: "to_date", label: "To" },
+    { field: "block_status", label: "Status", badge: true },
+    { field: "note", label: "Note" },
+  ],
+  form: [
+    { field: "room", label: "Room", type: "link", linkDoctype: "Room", required: true },
+    { field: "reason", label: "Reason", type: "select", options: ["House Use", "VIP Hold", "Owner", "Maintenance", "Other"], required: true },
+    { field: "from_date", label: "From date", type: "date", required: true },
+    { field: "to_date", label: "To date (exclusive)", type: "date", required: true },
+    { field: "block_status", label: "Status", type: "select", options: ["Active", "Released"] },
+    { field: "note", label: "Note", type: "data" },
+  ],
+}
+
 export const venueBookingsConfig: ScreenConfig = {
   doctype: "Venue Booking",
   dateFilter: { field: "event_date", label: "Event date" },
@@ -244,18 +275,25 @@ export const lostFoundConfig: ScreenConfig = {
   description: "Items found on property; track storage and returns.",
   propertyScoped: true,
   orderBy: "found_on desc",
+  searchFields: ["item_description", "found_by"],
+  filters: [
+    { field: "condition", label: "Kind", options: ["Found", "Missing", "Damaged"] },
+    { field: "status", label: "Status", options: ["In Storage", "Returned", "Disposed"] },
+  ],
   columns: [
     { field: "name", label: "Ref" },
+    { field: "condition", label: "Kind", badge: true },
     { field: "item_description", label: "Item" },
     { field: "found_in_room", label: "Room" },
-    { field: "found_on", label: "Found" },
+    { field: "found_on", label: "Logged" },
     { field: "status", label: "Status", badge: true },
   ],
   form: [
+    { field: "condition", label: "Kind", type: "select", options: ["Found", "Missing", "Damaged"], required: true },
     { field: "item_description", label: "Item", type: "data", required: true },
-    { field: "found_in_room", label: "Found in room", type: "link", linkDoctype: "Room" },
-    { field: "found_on", label: "Found on", type: "date", required: true },
-    { field: "found_by", label: "Found by", type: "data" },
+    { field: "found_in_room", label: "Room", type: "link", linkDoctype: "Room" },
+    { field: "found_on", label: "Logged on", type: "date", required: true },
+    { field: "found_by", label: "Logged by", type: "data" },
     { field: "status", label: "Status", type: "select", options: ["In Storage", "Returned", "Disposed"] },
     { field: "guest", label: "Guest (if known)", type: "link", linkDoctype: "Guest" },
     { field: "returned_on", label: "Returned on", type: "date" },
@@ -462,4 +500,52 @@ export const groupsConfig: ScreenConfig = {
     { field: "notes", label: "Notes", type: "data" },
   ],
   detailPanel: GroupControl,
+}
+
+export const outletsConfig: ScreenConfig = {
+  doctype: "POS Outlet",
+  title: "Outlets",
+  description: "Restaurants, bars and other points of sale.",
+  propertyScoped: true,
+  columns: [
+    { field: "outlet_name", label: "Outlet" },
+    { field: "outlet_type", label: "Type", badge: true },
+    { field: "gst_rate", label: "GST %" },
+  ],
+  form: [
+    { field: "outlet_name", label: "Outlet name", type: "data", required: true },
+    { field: "outlet_type", label: "Type", type: "select", options: ["Restaurant", "Room Service", "Bar", "Spa", "Other"] },
+    { field: "gst_rate", label: "GST %", type: "float" },
+    { field: "disabled", label: "Disabled", type: "check" },
+  ],
+}
+
+export const menuItemsConfig: ScreenConfig = {
+  doctype: "Menu Item",
+  title: "Menu",
+  description: "Dishes and drinks across your outlets - photo, price, veg/non-veg.",
+  searchFields: ["item_name", "category"],
+  pageSize: 50,
+  propertyScoped: true,
+  orderBy: "category, item_name",
+  columns: [
+    { field: "item_name", label: "Item" },
+    { field: "outlet", label: "Outlet" },
+    { field: "category", label: "Category" },
+    { field: "price", label: "Price" },
+    { field: "available", label: "Available", badge: true },
+  ],
+  form: [
+    { field: "outlet", label: "Outlet", type: "link", linkDoctype: "POS Outlet", required: true },
+    { field: "item_name", label: "Item name", type: "data", required: true },
+    { field: "category", label: "Category", type: "data" },
+    { field: "price", label: "Price", type: "currency", required: true },
+    { field: "image", label: "Photo", type: "image",
+      hint: "800×600px landscape JPG/WebP, under 500 KB — shows on the POS card and the guest QR menu" },
+    { field: "description", label: "Description", type: "data" },
+    { field: "prep_station", label: "Prep station", type: "select", options: ["Kitchen", "Bar"] },
+    { field: "is_veg", label: "Vegetarian", type: "check" },
+    { field: "is_alcohol", label: "Alcohol", type: "check" },
+    { field: "available", label: "Available", type: "check" },
+  ],
 }

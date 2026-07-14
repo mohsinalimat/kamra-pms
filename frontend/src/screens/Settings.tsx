@@ -7,6 +7,7 @@ import {
   updateResource,
 } from "../lib/resource"
 import { getTheme, setTheme, type Theme } from "../lib/theme"
+import { getLang, setLang, type Lang } from "../lib/dir"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 
@@ -321,6 +322,7 @@ export default function Settings() {
   const [gateway, setGateway] = useState<Doc | null>(null)
   const [ai, setAi] = useState<Doc | null>(null)
   const [theme, setThemeState] = useState<Theme>(getTheme())
+  const [lang, setLangState] = useState<Lang>(getLang())
 
   const load = useCallback(() => {
     call<Doc>("frappe.client.get", {
@@ -436,6 +438,26 @@ export default function Settings() {
         }}
       />
 
+      <SettingsCard
+        title="Revenue controls"
+        description="How far the house may oversell, applied when unassigned bookings would exceed physical capacity."
+        specs={[{
+          field: "overbooking_pct",
+          label: "Overbooking allowance %",
+          type: "number",
+          hint: "0 = never oversell. Room types can override this on their own doctype.",
+        }]}
+        doc={prop}
+        onSave={async (changes) => {
+          await updateResource("Property", property, changes)
+          load()
+        }}
+      />
+
+      <HurdleRatesCard property={property} />
+
+      <LaundryRatesCard property={property} />
+
       <Card>
         <CardHeader>
           <div>
@@ -483,9 +505,9 @@ export default function Settings() {
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-zinc-600">Theme</span>
+            <span className="w-20 text-sm font-medium text-zinc-600">Theme</span>
             <select
               className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
               value={theme}
@@ -503,8 +525,245 @@ export default function Settings() {
               applies to this browser only
             </span>
           </div>
+          <div className="flex items-center gap-3">
+            <span className="w-20 text-sm font-medium text-zinc-600">Language</span>
+            <select
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
+              value={lang}
+              onChange={(e) => {
+                const l = e.target.value as Lang
+                setLang(l)
+                setLangState(l)
+              }}
+            >
+              <option value="en">English</option>
+              <option value="ar">العربية (Arabic)</option>
+            </select>
+            <span className="text-xs text-zinc-400">
+              Arabic switches the interface to right-to-left · this browser only
+            </span>
+          </div>
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+interface LaundryRate {
+  name: string
+  item_name: string
+  service_type: string
+  rate: number
+  express_rate: number
+}
+
+/** The laundry rate card - what the floor team quotes and bills from.
+ * Express defaults to 1.5x when its column is left blank. */
+function LaundryRatesCard({ property }: { property: string }) {
+  const [rates, setRates] = useState<LaundryRate[]>([])
+  const [form, setForm] = useState<{ name?: string; item: string; service: string; rate: string; express: string } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    call<LaundryRate[]>("kamra.laundry.laundry_rates", { property }).then(setRates).catch(() => {})
+  }, [property])
+  useEffect(load, [load])
+
+  async function save() {
+    if (!form) return
+    setErr(null)
+    try {
+      await call("kamra.laundry.save_laundry_rate", {
+        property, name: form.name || null, item_name: form.item,
+        service_type: form.service, rate: form.rate,
+        express_rate: form.express || null,
+      })
+      setForm(null)
+      load()
+    } catch (e) {
+      setErr(serverError(e))
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Laundry rate card</CardTitle>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            Per-item prices the housekeeping app quotes and bills from.
+            Blank express = 1.5× the normal rate.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setForm({ item: "", service: "Wash & Iron", rate: "", express: "" })}>
+          Add rate
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {err && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
+        {form && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 p-2">
+            <input className="w-36 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="Item (Shirt…)"
+              value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} autoFocus />
+            <select className="rounded-lg border border-zinc-300 px-2 py-1.5 text-sm"
+              value={form.service} onChange={(e) => setForm({ ...form, service: e.target.value })}>
+              {["Wash & Iron", "Dry Clean", "Iron Only"].map((s) => <option key={s}>{s}</option>)}
+            </select>
+            <input className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="Rate ₹" inputMode="numeric"
+              value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value.replace(/[^\d.]/g, "") })} />
+            <input className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="Express ₹ (opt)" inputMode="numeric"
+              value={form.express} onChange={(e) => setForm({ ...form, express: e.target.value.replace(/[^\d.]/g, "") })} />
+            <Button disabled={!form.item.trim() || !form.rate} onClick={save}>Save</Button>
+            <Button variant="ghost" onClick={() => setForm(null)}>Cancel</Button>
+          </div>
+        )}
+        {rates.length === 0 ? (
+          <p className="py-3 text-sm text-zinc-400">No rates yet — add the first item.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-zinc-400">
+                <th className="py-1.5">Item</th><th>Service</th>
+                <th className="text-right">Rate</th><th className="text-right">Express</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {rates.map((r) => (
+                <tr key={r.name} className="border-t border-zinc-100">
+                  <td className="py-1.5 font-medium">{r.item_name}</td>
+                  <td className="text-zinc-500">{r.service_type}</td>
+                  <td className="text-right tabular-nums">₹{r.rate.toLocaleString("en-IN")}</td>
+                  <td className="text-right tabular-nums text-zinc-500">₹{r.express_rate.toLocaleString("en-IN")}</td>
+                  <td className="text-right">
+                    <button className="text-xs font-medium text-brand-700 hover:underline"
+                      onClick={() => setForm({ name: r.name, item: r.item_name, service: r.service_type, rate: String(r.rate), express: "" })}>
+                      Edit
+                    </button>
+                    <button className="ml-2 text-xs text-zinc-400 hover:text-rose-600"
+                      onClick={async () => { await call("kamra.laundry.delete_laundry_rate", { name: r.name }); load() }}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+interface HurdleTier {
+  name: string
+  room_type: string | null
+  occupancy_from: number
+  premium_pct: number
+  min_rate: number
+}
+
+/** Demand tiers: at each occupancy threshold, quotes carry a premium and
+ * manual rates can't undercut the hurdle (the minimum sell rate). */
+function HurdleRatesCard({ property }: { property: string }) {
+  const [tiers, setTiers] = useState<HurdleTier[]>([])
+  const [form, setForm] = useState<{ name?: string; from: string; premium: string; min: string } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    call<HurdleTier[]>("kamra.api.hurdle_rates", { property }).then(setTiers).catch(() => {})
+  }, [property])
+  useEffect(load, [load])
+
+  async function save() {
+    if (!form) return
+    setErr(null)
+    try {
+      await call("kamra.api.save_hurdle_rate", {
+        property, name: form.name || null, occupancy_from: form.from,
+        premium_pct: form.premium || 0, min_rate: form.min || 0,
+      })
+      setForm(null)
+      load()
+    } catch (e) {
+      setErr(serverError(e))
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Demand pricing (hurdle rates)</CardTitle>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            When forecast occupancy for a date crosses a threshold, quotes
+            carry the premium automatically and no rate may sell below the
+            hurdle. Guardrails still cap the extremes.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setForm({ from: "", premium: "", min: "" })}>
+          Add tier
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {err && <p className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p>}
+        {form && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 p-2">
+            <label className="flex items-center gap-1 text-sm text-zinc-600">
+              Occupancy ≥
+              <input className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="80" inputMode="numeric"
+                value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value.replace(/[^\d.]/g, "") })} autoFocus />
+              %
+            </label>
+            <label className="flex items-center gap-1 text-sm text-zinc-600">
+              Premium +
+              <input className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="15" inputMode="numeric"
+                value={form.premium} onChange={(e) => setForm({ ...form, premium: e.target.value.replace(/[^\d.]/g, "") })} />
+              %
+            </label>
+            <label className="flex items-center gap-1 text-sm text-zinc-600">
+              Hurdle ₹
+              <input className="w-24 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm" placeholder="min rate" inputMode="numeric"
+                value={form.min} onChange={(e) => setForm({ ...form, min: e.target.value.replace(/[^\d.]/g, "") })} />
+            </label>
+            <Button disabled={!form.from} onClick={save}>Save</Button>
+            <Button variant="ghost" onClick={() => setForm(null)}>Cancel</Button>
+          </div>
+        )}
+        {tiers.length === 0 ? (
+          <p className="py-3 text-sm text-zinc-400">
+            No tiers yet — e.g. "at 80% occupancy, +15% premium, minimum ₹6,000".
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-zinc-400">
+                <th className="py-1.5">When occupancy ≥</th>
+                <th className="text-right">Premium</th>
+                <th className="text-right">Hurdle (min rate)</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map((t) => (
+                <tr key={t.name} className="border-t border-zinc-100">
+                  <td className="py-1.5 font-medium">{t.occupancy_from}%</td>
+                  <td className="text-right tabular-nums">{t.premium_pct ? `+${t.premium_pct}%` : "—"}</td>
+                  <td className="text-right tabular-nums">{t.min_rate ? `₹${t.min_rate.toLocaleString("en-IN")}` : "—"}</td>
+                  <td className="text-right">
+                    <button className="text-xs font-medium text-brand-700 hover:underline"
+                      onClick={() => setForm({ name: t.name, from: String(t.occupancy_from), premium: String(t.premium_pct || ""), min: String(t.min_rate || "") })}>
+                      Edit
+                    </button>
+                    <button className="ml-2 text-xs text-zinc-400 hover:text-rose-600"
+                      onClick={async () => { await call("kamra.api.delete_hurdle_rate", { name: t.name }); load() }}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
   )
 }

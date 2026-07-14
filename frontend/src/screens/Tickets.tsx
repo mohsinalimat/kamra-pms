@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { useRealtime } from "../lib/realtime"
 import { AlertTriangle, Plus } from "lucide-react"
 import { Sheet } from "../components/ui/sheet"
 import { call, getCurrentProperty } from "../lib/api"
@@ -64,6 +65,7 @@ export default function Tickets() {
   }, [showClosed])
 
   useEffect(load, [load])
+  useRealtime(load)
   useEffect(() => {
     listResource("Room", { fields: ["name"], orderBy: "room_number asc" })
       .then((r) => setRooms(r.map((x) => x.name)))

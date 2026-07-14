@@ -57,8 +57,8 @@ def showcase(property: str):
 		"Experience",
 		filters={"property": property, "disabled": 0,
 		         "show_on_booking_page": 1},
-		fields=["experience_name", "category", "price", "duration",
-		        "description", "image_url"],
+		fields=["name", "experience_name", "category", "price", "duration",
+		        "description", "image_url", "gst_rate"],
 		order_by="category asc",
 	)
 
@@ -75,6 +75,7 @@ def showcase(property: str):
 			"description": prop.get("showcase_description"),
 			"logo_url": prop.get("logo_url"),
 			"hero_image": prop.get("hero_image"),
+			"brand_accent": prop.get("brand_accent") or "Emerald",
 			"star_category": prop.get("star_category"),
 			"address_line": prop.address_line,
 			"city": prop.city, "state": prop.state,
@@ -106,6 +107,9 @@ def showcase(property: str):
 			"og_image": prop.get("og_image"),
 			"page_slug": prop.get("page_slug"),
 			"booking_engine_enabled": prop.get("booking_engine_enabled"),
+			"payment_mode": prop.get("booking_payment_mode") or "Pay at hotel",
+			"advance_percent": float(prop.get("advance_percent") or 0),
+			"registration_fee": float(prop.get("registration_fee") or 0),
 		},
 		"room_types": room_types,
 		"meal_plans": meal_plans,
@@ -255,14 +259,52 @@ def precheckin_submit(token: str, id_type: str, id_number: str,
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=10, seconds=3600)
+def _advance_terms(prop, total: float) -> tuple[float, str]:
+	"""What the guest pays online now, and a human label - computed from the
+	property's CURRENT booking-payment policy. Snapshotted onto the booking so
+	a later policy change never re-bills an existing guest."""
+	mode = prop.get("booking_payment_mode") or "Pay at hotel"
+	total = float(total or 0)
+	if mode == "Advance percent":
+		pct = float(prop.get("advance_percent") or 0)
+		due = round(total * pct / 100, 2)
+		return due, f"{pct:g}% advance (₹{due:,.0f}) now, rest at the hotel"
+	if mode == "Registration fee":
+		due = min(float(prop.get("registration_fee") or 0), total)
+		return due, f"₹{due:,.0f} registration fee now, rest at the hotel"
+	if mode == "Full online":
+		return total, "Full amount paid online"
+	return 0.0, "Pay at the hotel"
+
+
 def book(property: str, room_type: str, check_in_date: str,
          check_out_date: str, guest_name: str, phone: str,
          email: str = "", adults: int = 2, children: int = 0,
-         meal_plan: str = "", special_requests: str = ""):
-	"""Create a Website booking (pay at hotel). Guest identity is the
-	phone number; staff verify at check-in."""
+         meal_plan: str = "", special_requests: str = "", addons=None,
+         voucher_code: str = ""):
+	"""Create a Website booking. Guest identity is the phone number; staff
+	verify at check-in. The advance owed is computed from the property's
+	current payment policy and snapshotted onto the booking."""
 	if not guest_name.strip() or not phone.strip():
 		frappe.throw("Name and phone are required.")
+
+	prop = frappe.get_cached_doc("Property", property)
+
+	# a guest may only add experiences the hotel actually publishes for this
+	# property - never a private, disabled or another property's experience,
+	# and always at the hotel's own price (qty is all the guest controls)
+	if isinstance(addons, str):
+		addons = frappe.parse_json(addons)
+	public_ids = set(frappe.get_all(
+		"Experience",
+		filters={"property": property, "disabled": 0, "show_on_booking_page": 1},
+		pluck="name",
+	))
+	safe_addons = [
+		{"experience": a["experience"], "qty": max(1, int(a.get("qty") or 1))}
+		for a in (addons or [])
+		if a.get("experience") in public_ids
+	]
 
 	from kamra.api import create_booking
 
@@ -278,14 +320,24 @@ def book(property: str, room_type: str, check_in_date: str,
 			adults=int(adults),
 			children=int(children),
 			meal_plan=meal_plan or None,
+			voucher_code=voucher_code or None,
 			source="Website",
+			addons=safe_addons or None,
 		)
-		if email or special_requests:
-			frappe.db.set_value("Reservation", result["reservation"], {
-				"special_requests": special_requests or None,
-			})
-			if email:
-				frappe.db.set_value("Guest", result["guest"], "email", email)
+		# snapshot the advance owed from the policy in force RIGHT NOW, so a
+		# later change to the property's payment config never re-bills this guest
+		total = float(result["amount_after_tax"] or 0)
+		advance_due, policy = _advance_terms(prop, total)
+		updates = {
+			"advance_due": advance_due,
+			"payment_policy": policy,
+			"is_pay_at_hotel": 1 if advance_due < total else 0,
+		}
+		if special_requests:
+			updates["special_requests"] = special_requests
+		frappe.db.set_value("Reservation", result["reservation"], updates)
+		if email:
+			frappe.db.set_value("Guest", result["guest"], "email", email)
 		frappe.db.commit()
 	finally:
 		frappe.set_user("Guest")
@@ -293,5 +345,116 @@ def book(property: str, room_type: str, check_in_date: str,
 	return {
 		"reservation": result["reservation"],
 		"amount_after_tax": result["amount_after_tax"],
-		"pay_at_hotel": True,
+		"advance_due": advance_due,
+		"payment_policy": policy,
+		"pay_at_hotel": advance_due <= 0,
 	}
+
+
+@frappe.whitelist(allow_guest=True)
+def check_voucher(property: str, code: str, nights: int = 1):
+	"""Live promo-code feedback on the booking page. Never throws - returns
+	{ok, message, discount_type, value} so the guest sees a friendly note."""
+	from kamra.pricing import validate_voucher
+	code = (code or "").strip()
+	if not code:
+		return {"ok": False, "message": "Enter a code."}
+	try:
+		v = validate_voucher(property, code, int(nights or 1))
+	except Exception as e:
+		return {"ok": False, "message": str(e)}
+	label = (f"{v.value:g}% off" if v.discount_type == "Percent"
+	         else f"₹{v.value:,.0f} off")
+	return {"ok": True, "message": f"'{v.voucher_code}' applied - {label}.",
+	        "discount_type": v.discount_type, "value": float(v.value)}
+
+
+@frappe.whitelist(allow_guest=True)
+def qr_menu(outlet: str):
+	"""The guest-facing digital menu behind a table/room QR code. Only shows
+	outlets a hotel has published items for; no prices are trusted from the
+	guest - they're read here."""
+	o = frappe.db.get_value(
+		"POS Outlet", outlet, ["outlet_name", "disabled", "property"],
+		as_dict=True)
+	if not o or o.disabled:
+		frappe.throw("This menu isn't available.")
+	items = frappe.get_all(
+		"Menu Item",
+		filters={"outlet": outlet, "available": 1},
+		fields=["name", "item_name", "category", "price", "is_veg",
+		        "is_alcohol", "image", "description"],
+		order_by="category, item_name")
+	cats: dict[str, list] = {}
+	for it in items:
+		cats.setdefault(it.category or "Other", []).append(it)
+	return {
+		"outlet": outlet, "outlet_name": o.outlet_name,
+		"property_name": frappe.db.get_value("Property", o.property, "property_name"),
+		"categories": [{"category": c, "items": v} for c, v in cats.items()],
+	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=3600)
+def qr_order(outlet: str, items, room: str | None = None,
+             table_no: str | None = None):
+	"""A guest places an order from the QR menu. It lands as a QR order that
+	a captain must confirm before it fires to the kitchen or touches a bill -
+	the guest can never post directly to a folio."""
+	if frappe.db.get_value("POS Outlet", outlet, "disabled"):
+		frappe.throw("This menu isn't available.")
+	from kamra import pos
+	frappe.set_user("agent@kamra.local")  # governed writer, like public bookings
+	try:
+		out = pos.create_order(outlet=outlet, items=items, room=room or None,
+		                       table_no=table_no or None, source="QR")
+		frappe.db.commit()
+	finally:
+		frappe.set_user("Guest")
+	return {"ok": True, "order": out["order"], "order_total": out["order_total"],
+	        "message": "Order placed - a server will confirm it shortly."}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=10, seconds=3600)
+def hosting_enquiry(full_name: str, email: str, phone: str = "",
+                    property_name: str = "", rooms: int = 0, city: str = "",
+                    message: str = ""):
+	"""Kamra Cloud hosting enquiry from kamrapms.com. Stored first (a lead is
+	never lost even without SMTP), then a best-effort email to the team."""
+	if not (full_name or "").strip() or not (email or "").strip():
+		frappe.throw("Name and email are required.")
+	doc = frappe.get_doc({
+		"doctype": "Hosting Enquiry",
+		"full_name": full_name.strip()[:140],
+		"email": email.strip()[:140],
+		"phone": (phone or "").strip()[:40] or None,
+		"property_name": (property_name or "").strip()[:140] or None,
+		"rooms": int(rooms or 0),
+		"city": (city or "").strip()[:80] or None,
+		"message": (message or "").strip()[:2000] or None,
+		"status": "New",
+	})
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	try:
+		frappe.sendmail(
+			recipients=["hello@kamrapms.com"],
+			subject=f"Kamra Cloud enquiry: {doc.full_name}"
+			        + (f" ({doc.property_name})" if doc.property_name else ""),
+			message=(
+				f"<p><b>{doc.full_name}</b> &lt;{doc.email}&gt;"
+				+ (f" · {doc.phone}" if doc.phone else "") + "</p>"
+				+ (f"<p>Property: {doc.property_name}"
+				   + (f", {doc.rooms} rooms" if doc.rooms else "")
+				   + (f", {doc.city}" if doc.city else "") + "</p>"
+				   if doc.property_name else "")
+				+ (f"<p>{doc.message}</p>" if doc.message else "")
+				+ f"<p>Ref: {doc.name}</p>"
+			),
+		)
+	except Exception:
+		pass  # no SMTP yet - the enquiry is already saved
+	return {"ok": True,
+	        "message": "Thanks - we'll get back to you within a day."}

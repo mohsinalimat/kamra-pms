@@ -4,16 +4,60 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import date_diff, now_datetime
+from frappe.utils import cint, date_diff, now_datetime
 
 
 class Reservation(Document):
+	def validate_type_capacity(self):
+		"""Room-type capacity with a controlled overbooking allowance.
+
+		The room-level overlap guard below stops physical double-booking;
+		this stops UNASSIGNED bookings quietly over-selling a category. The
+		allowance (room type override, else property-wide, default 0%) is a
+		revenue-management decision made in Settings - never implicit.
+		"""
+		# waitlisted stays hold no inventory - parking is always allowed
+		if self.status in ("Cancelled", "No Show", "Checked Out", "Waitlist"):
+			return
+		total = frappe.db.count("Room", {"room_type": self.room_type})
+		if not total:
+			return  # setup-time bookings before rooms exist
+		pct = float(frappe.db.get_value(
+			"Room Type", self.room_type, "overbooking_pct") or 0)
+		if not pct:
+			# db read, not the document cache - enforcement must see the
+			# committed value, not a stale cached doc
+			pct = float(frappe.db.get_value(
+				"Property", self.property, "overbooking_pct") or 0)
+		limit = int(total * (1 + pct / 100))
+		from frappe.utils import add_days, date_diff
+		nights = max(1, date_diff(self.check_out_date, self.check_in_date))
+		for i in range(min(int(nights), 366)):
+			d = str(add_days(self.check_in_date, i))
+			cnt = frappe.db.sql(
+				"""SELECT COUNT(*) FROM `tabReservation`
+				   WHERE room_type = %(rt)s AND name != %(name)s
+				     AND status IN ('Confirmed', 'Checked In')
+				     AND check_in_date <= %(d)s
+				     AND GREATEST(check_out_date,
+				                  DATE_ADD(check_in_date, INTERVAL 1 DAY)) > %(d)s""",
+				{"rt": self.room_type, "name": self.name or "new", "d": d},
+			)[0][0]
+			if cnt + 1 > limit:
+				frappe.throw(
+					_("{0} is sold out for {1}: {2} of {3} rooms sold and "
+					  "the overbooking allowance ({4}%) is used up.").format(
+						self.room_type, d, cnt, total, pct),
+					title=_("Overbooking limit"))
+
 	def validate(self):
 		self.validate_dates()
 		self.nights = date_diff(self.check_out_date, self.check_in_date)
 		self.validate_blacklist()
+		self.validate_occupancy()
 		self.validate_room_belongs_to_type()
 		self.validate_no_overlap()
+		self.validate_type_capacity()
 		self.validate_cancellation_path()
 		self.apply_pricing()
 
@@ -28,6 +72,40 @@ class Reservation(Document):
 			frappe.throw(_(
 				"Use the Cancel action (or the cancel_reservation API) so "
 				"the cancellation policy is applied."))
+
+	def validate_occupancy(self):
+		"""A room only sleeps so many. Checked when the party or room type
+		changes — legacy over-capacity stays can still check out."""
+		if not self.room_type:
+			return
+		old = None if self.is_new() else self.get_doc_before_save()
+		if old and (
+			cint(old.adults), cint(old.children), old.room_type
+		) == (cint(self.adults), cint(self.children), self.room_type):
+			return
+		adults, children = cint(self.adults), cint(self.children)
+		if adults < 1:
+			frappe.throw(_("A stay needs at least one adult."),
+				title=_("Room capacity"))
+		cap = frappe.db.get_value(
+			"Room Type", self.room_type,
+			["adults_capacity", "children_capacity", "room_type_name"],
+			as_dict=True,
+		) or frappe._dict()
+		over = []
+		if cint(cap.adults_capacity) and adults > cint(cap.adults_capacity):
+			over.append(_("{0} adults (max {1})").format(
+				adults, cint(cap.adults_capacity)))
+		if cint(cap.children_capacity) and children > cint(cap.children_capacity):
+			over.append(_("{0} children (max {1})").format(
+				children, cint(cap.children_capacity)))
+		if over:
+			frappe.throw(_(
+				"{0} can't sleep {1}. Reduce the party, pick a bigger room "
+				"type, or book additional rooms — use a Group Booking for "
+				"large parties."
+			).format(cap.room_type_name or self.room_type, _(" and ").join(over)),
+				title=_("Over room capacity"))
 
 	def validate_dates(self):
 		diff = date_diff(self.check_out_date, self.check_in_date)

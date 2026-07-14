@@ -309,9 +309,56 @@ export function BookingDialog(props: {
   const set = (k: string, v: string | number) =>
     setForm((f) => ({ ...f, [k]: v }))
 
-  const roomTypeName =
-    options?.room_types.find((rt) => rt.name === form.room_type)
-      ?.room_type_name ?? ""
+  const selectedRt = options?.room_types.find(
+    (rt) => rt.name === form.room_type,
+  )
+  const roomTypeName = selectedRt?.room_type_name ?? ""
+  const overCapacity =
+    !!selectedRt &&
+    ((selectedRt.adults_capacity > 0 &&
+      form.adults > selectedRt.adults_capacity) ||
+      (selectedRt.children_capacity > 0 &&
+        form.children > selectedRt.children_capacity))
+
+  // rooms needed to sleep the whole party in this room type, keeping at
+  // least one adult in every room
+  const roomsNeeded = (() => {
+    if (!selectedRt) return 1
+    const capA = selectedRt.adults_capacity || form.adults || 1
+    const capC = selectedRt.children_capacity
+    const n = Math.max(
+      Math.ceil(form.adults / Math.max(1, capA)),
+      capC > 0 ? Math.ceil(form.children / capC) : 1,
+      1,
+    )
+    return Math.min(n, Math.max(1, form.adults))
+  })()
+
+  const distributeParty = () => {
+    // spread the party as evenly as possible; the lot books as one group
+    const n = roomsNeeded
+    const baseA = Math.floor(form.adults / n)
+    const remA = form.adults % n
+    const baseC = Math.floor(form.children / n)
+    const remC = form.children % n
+    const alloc = Array.from({ length: n }, (_, i) => ({
+      adults: baseA + (i < remA ? 1 : 0),
+      children: baseC + (i < remC ? 1 : 0),
+    }))
+    setForm((f) => ({
+      ...f,
+      adults: alloc[0].adults,
+      children: alloc[0].children,
+    }))
+    setMoreRooms(
+      alloc.slice(1).map((a) => ({
+        room_type: form.room_type,
+        adults: a.adults,
+        children: a.children,
+        meal_plan: form.meal_plan,
+      })),
+    )
+  }
 
   return (
     <div
@@ -512,6 +559,38 @@ export function BookingDialog(props: {
                   />
                 </Field>
               </div>
+
+              {selectedRt &&
+                (selectedRt.adults_capacity > 0 ||
+                  selectedRt.children_capacity > 0) &&
+                (overCapacity ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                    {selectedRt.room_type_name} sleeps up to{" "}
+                    <strong>{selectedRt.adults_capacity} adults</strong>
+                    {selectedRt.children_capacity > 0 && (
+                      <>
+                        {" · "}
+                        <strong>
+                          {selectedRt.children_capacity} children
+                        </strong>
+                      </>
+                    )}{" "}
+                    per room. For a bigger party, split them across rooms —
+                    it books as one group.{" "}
+                    <button
+                      className="font-semibold text-brand-700 hover:underline"
+                      onClick={distributeParty}
+                    >
+                      Split into {roomsNeeded} rooms
+                    </button>
+                  </div>
+                ) : (
+                  <p className="-mt-2 text-xs text-zinc-400">
+                    Sleeps up to {selectedRt.adults_capacity} adults
+                    {selectedRt.children_capacity > 0 &&
+                      ` · ${selectedRt.children_capacity} children`}
+                  </p>
+                ))}
 
               {/* additional rooms - books the lot as one group */}
               {moreRooms.map((r, i) => (

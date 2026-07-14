@@ -45,8 +45,12 @@
   "rates_include_tax",
   "sb_showcase",
   "booking_engine_enabled",
+  "booking_payment_mode",
+  "advance_percent",
+  "registration_fee",
   "require_cashier_pin",
   "logo_url",
+  "brand_accent",
   "showcase_description",
   "sell_message",
   "hero_image",
@@ -67,7 +71,8 @@
   "meta_description",
   "og_image",
   "page_slug",
-  "disabled"
+  "disabled",
+  "overbooking_pct"
  ],
  "fields": [
   {
@@ -227,7 +232,7 @@
    "default": "7500",
    "fieldname": "gst_slab_threshold",
    "fieldtype": "Currency",
-   "label": "Slab Threshold (\u20b9/night)"
+   "label": "Slab Threshold (₹/night)"
   },
   {
    "default": "5",
@@ -260,6 +265,28 @@
    "label": "Booking Engine Enabled"
   },
   {
+   "fieldname": "booking_payment_mode",
+   "fieldtype": "Select",
+   "label": "Booking Payment",
+   "options": "Pay at hotel\nAdvance percent\nRegistration fee\nFull online",
+   "default": "Pay at hotel",
+   "description": "What the guest pays online when booking on the public page. Existing bookings keep the terms they were made under."
+  },
+  {
+   "fieldname": "advance_percent",
+   "fieldtype": "Percent",
+   "label": "Advance %",
+   "depends_on": "eval:doc.booking_payment_mode=='Advance percent'",
+   "description": "Percent of the total collected upfront; the rest is paid at the hotel."
+  },
+  {
+   "fieldname": "registration_fee",
+   "fieldtype": "Currency",
+   "label": "Registration Fee",
+   "depends_on": "eval:doc.booking_payment_mode=='Registration fee'",
+   "description": "Flat amount collected upfront; the rest is paid at the hotel."
+  },
+  {
    "fieldname": "require_cashier_pin",
    "fieldtype": "Check",
    "label": "Require cashier PIN on money actions",
@@ -272,8 +299,9 @@
   },
   {
    "fieldname": "hero_image",
-   "fieldtype": "Data",
-   "label": "Hero Image URL"
+   "fieldtype": "Attach Image",
+   "label": "Hero Image",
+   "description": "1920×1080px (16:9 landscape), JPG or WebP under 2 MB. The big photo at the top of the booking page."
   },
   {
    "fieldname": "star_category",
@@ -298,10 +326,17 @@
    "label": "Property Amenities (public)"
   },
   {
-   "description": "Square logo shown on the booking page and invoices",
+   "description": "Square, 512×512px. PNG or SVG with a transparent background. Shown on the booking page and invoices.",
    "fieldname": "logo_url",
+   "fieldtype": "Attach Image",
+   "label": "Logo"
+  },
+  {
+   "default": "#0f6b54",
+   "description": "Accent hex (e.g. #0f6b54) for the booking page - buttons, links, highlights.",
+   "fieldname": "brand_accent",
    "fieldtype": "Data",
-   "label": "Logo URL"
+   "label": "Booking Page Accent"
   },
   {
    "default": "Store",
@@ -404,13 +439,20 @@
   },
   {
    "fieldname": "og_image",
-   "fieldtype": "Data",
-   "label": "OG Image URL"
+   "fieldtype": "Attach Image",
+   "label": "OG Image",
+   "description": "Exactly 1200×630px, JPG or PNG. What WhatsApp, Google and social previews show when the booking page is shared."
   },
   {
    "fieldname": "page_slug",
    "fieldtype": "Data",
    "label": "Page Slug"
+  },
+  {
+   "fieldname": "overbooking_pct",
+   "fieldtype": "Percent",
+   "label": "Overbooking Allowance %",
+   "description": "Sell unassigned bookings above physical capacity by this much (0 = never overbook). Room types can override."
   }
  ],
  "grid_page_length": 50,

@@ -34,6 +34,12 @@ import AppLauncher from "./screens/AppLauncher"
 import Marketplace from "./screens/Marketplace"
 import Reports from "./screens/Reports"
 import RevenueReports from "./screens/RevenueReports"
+import OpsSLA from "./screens/OpsSLA"
+import Dashboard from "./screens/Dashboard"
+import CRS from "./screens/CRS"
+import POS from "./screens/POS"
+import Kitchen from "./screens/Kitchen"
+import QrMenu from "./screens/QrMenu"
 import AccountingExport from "./screens/AccountingExport"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
@@ -46,6 +52,9 @@ import {
   mealPlansConfig,
   ratePlansConfig,
   reservationsConfig,
+  roomBlocksConfig,
+  menuItemsConfig,
+  outletsConfig,
   roomTypesConfig,
   roomsConfig,
   seasonsConfig,
@@ -56,6 +65,7 @@ import {
   venuesConfig,
   vouchersConfig,
 } from "./screens/configs"
+import ConnectionBanner from "./components/ConnectionBanner"
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -148,6 +158,7 @@ function CalendarScreen() {
 export default function App() {
   return (
     <ErrorBoundary>
+      <ConnectionBanner />
       <Routes>
         {/* public booking engine - no login; stay state lives in the URL
             (/book/2026-07-10/2026-07-12/2/0) so links are shareable and
@@ -161,6 +172,7 @@ export default function App() {
         <Route path="checkin/:token" element={<PublicCheckin />} />
         {/* housekeeping phone app - share the /hk URL with the HK team */}
         <Route path="hk" element={<HkApp />} />
+        <Route path="menu/:outlet" element={<QrMenu />} />
         {/* dedicated login route so signing out changes the URL */}
         <Route path="login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
@@ -188,6 +200,10 @@ export default function App() {
           <Route
             path="room-types"
             element={<ResourceScreen config={roomTypesConfig} />}
+          />
+          <Route
+            path="room-blocks"
+            element={<ResourceScreen config={roomBlocksConfig} />}
           />
           <Route
             path="rate-plans"
@@ -247,6 +263,13 @@ export default function App() {
           <Route path="developers" element={<Developers />} />
           <Route path="reports" element={<Reports />} />
           <Route path="revenue-reports" element={<RevenueReports />} />
+          <Route path="ops-sla" element={<OpsSLA />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="crs" element={<CRS />} />
+          <Route path="pos" element={<POS />} />
+          <Route path="kitchen" element={<Kitchen />} />
+          <Route path="menu-items" element={<ResourceScreen config={menuItemsConfig} />} />
+          <Route path="outlets" element={<ResourceScreen config={outletsConfig} />} />
           <Route path="accounting-export" element={<AccountingExport />} />
           <Route path="tickets" element={<Tickets />} />
           <Route

@@ -10,17 +10,43 @@ function csrfToken(): string | undefined {
   return t && t !== "None" ? t : undefined
 }
 
+/** Marks errors where the request never reached the server (offline, server
+ * restarting). Callers keep the user's session and data intact for these. */
+export function isNetworkError(err: unknown): boolean {
+  return Boolean((err as { network?: boolean }).network)
+}
+
 async function doFetch(path: string, init?: RequestInit) {
   const token = csrfToken()
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { "X-Frappe-CSRF-Token": token } : {}),
-      ...(init?.headers as Record<string, string> | undefined),
-    },
-    credentials: "include",
-  })
+  const request = () =>
+    fetch(path, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { "X-Frappe-CSRF-Token": token } : {}),
+        ...(init?.headers as Record<string, string> | undefined),
+      },
+      credentials: "include",
+    })
+  let res: Response
+  try {
+    res = await request()
+  } catch {
+    // the request never left: wifi blip, server restarting. One quiet retry
+    // covers most of these without the user ever seeing an error.
+    await new Promise((r) => setTimeout(r, 800))
+    try {
+      res = await request()
+    } catch (err) {
+      console.warn(`[kamra] network failure calling ${path}`, err)
+      window.dispatchEvent(new Event("kamra:offline"))
+      throw Object.assign(
+        new Error("Can't reach Kamra right now. Check your connection — we'll reconnect automatically."),
+        { network: true },
+      )
+    }
+  }
+  window.dispatchEvent(new Event("kamra:online"))
   if (!res.ok) {
     const body = await res.text()
     // A 401/403 on anything other than the auth endpoints means the session may
@@ -55,6 +81,26 @@ export async function logout() {
 export function isAuthError(err: unknown): boolean {
   const status = (err as { status?: number }).status
   return status === 401 || status === 403
+}
+
+/** Upload an image to Frappe's public files; resolves to its served URL. */
+export async function uploadFile(file: File): Promise<string> {
+  const token = csrfToken()
+  const fd = new FormData()
+  fd.append("file", file, file.name)
+  fd.append("is_private", "0")
+  const res = await fetch("/api/method/upload_file", {
+    method: "POST",
+    // no Content-Type header: the browser sets the multipart boundary
+    headers: token ? { "X-Frappe-CSRF-Token": token } : undefined,
+    body: fd,
+    credentials: "include",
+  })
+  if (!res.ok) throw new Error(`upload failed (${res.status})`)
+  const out = (await res.json()) as { message?: { file_url?: string } }
+  const url = out.message?.file_url
+  if (!url) throw new Error("upload returned no file URL")
+  return url
 }
 
 export async function frappeFetch<T = unknown>(
@@ -153,6 +199,7 @@ export interface BookingOptions {
     room_type_name: string
     base_price: number
     adults_capacity: number
+    children_capacity: number
   }[]
   meal_plans: {
     name: string

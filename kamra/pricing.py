@@ -34,6 +34,57 @@ def occupancy_rate(rt, adults: int, children: int) -> Decimal:
 	return rate
 
 
+def forecast_occupancy(property: str, date) -> float:
+	"""Property occupancy for a future date: live reservations covering that
+	night over sellable rooms. This is the demand signal hurdle tiers key on."""
+	total = frappe.db.count("Room", {"property": property})
+	if not total:
+		return 0.0
+	sold = frappe.db.sql(
+		"""SELECT COUNT(*) FROM `tabReservation`
+		   WHERE property = %(p)s AND status IN ('Confirmed', 'Checked In')
+		     AND check_in_date <= %(d)s
+		     AND GREATEST(check_out_date,
+		                  DATE_ADD(check_in_date, INTERVAL 1 DAY)) > %(d)s""",
+		{"p": property, "d": str(date)})[0][0]
+	return round(sold / total * 100, 1)
+
+
+def demand_tier(property: str, room_type: str, date,
+                occupancy: float | None = None) -> dict | None:
+	"""The active hurdle tier for a date: the highest occupancy threshold the
+	forecast has crossed (room-type-specific rows beat property-wide ones).
+	Returns {occupancy, occupancy_from, premium_pct, min_rate} or None."""
+	occ = forecast_occupancy(property, date) if occupancy is None else occupancy
+	rows = frappe.get_all(
+		"Hurdle Rate",
+		filters={"property": property, "disabled": 0,
+		         "occupancy_from": ("<=", occ),
+		         "room_type": ("in", [room_type, "", None])},
+		fields=["room_type", "occupancy_from", "premium_pct", "min_rate"],
+		order_by="occupancy_from desc")
+	if not rows:
+		return None
+	specific = [r for r in rows if r.room_type == room_type]
+	t = specific[0] if specific else rows[0]
+	return {"occupancy": occ, "occupancy_from": float(t.occupancy_from),
+	        "premium_pct": float(t.premium_pct or 0),
+	        "min_rate": float(t.min_rate or 0)}
+
+
+def demand_adjust(property: str, room_type: str, date, rate: Decimal,
+                  occupancy: float | None = None) -> tuple[Decimal, dict | None]:
+	"""Apply the active demand tier: premium % on top of the season rate,
+	then the hurdle floor - the rate never sells below the tier's minimum."""
+	tier = demand_tier(property, room_type, date, occupancy)
+	if not tier:
+		return rate, None
+	rate = rate * (Decimal(1) + _dec(tier["premium_pct"]) / Decimal(100))
+	if tier["min_rate"] and rate < _dec(tier["min_rate"]):
+		rate = _dec(tier["min_rate"])
+	return rate, tier
+
+
 def season_adjust(property: str, date, base: Decimal) -> Decimal:
 	"""Apply the highest-priority active season covering `date`."""
 	seasons = frappe.get_all(
@@ -120,18 +171,28 @@ def quote(
 	nightly = []
 	room_total = Decimal(0)
 	room_tax = Decimal(0)
+	occ_cache: dict = {}
 	# a day-use stay bills one "night" on the check-in date
 	for i in range(max(nights, 1)):
 		date = add_days(check_in_date, i)
 		rate = season_adjust(
 			property, date, occupancy_rate(rt, adults, children)
 		)
+		# demand pricing: when the house fills past a hurdle tier, the
+		# premium applies and the tier's floor holds - decided here, in
+		# code, never by the caller
+		if str(date) not in occ_cache:
+			occ_cache[str(date)] = forecast_occupancy(property, date)
+		rate, tier = demand_adjust(property, room_type, date, rate,
+		                           occupancy=occ_cache[str(date)])
 		gst = room_gst_rate(property, rt, rate)
 		if inclusive:
 			# configured price is gross — back out the taxable value
 			rate = rate / (Decimal(1) + gst / Decimal(100))
 		nightly.append({"date": str(date), "rate": float(rate),
-		                "gst_rate": float(gst)})
+		                "gst_rate": float(gst),
+		                "demand_premium_pct": tier["premium_pct"] if tier else 0,
+		                "occupancy": occ_cache[str(date)]})
 		room_total += rate
 		room_tax += rate * gst / Decimal(100)
 

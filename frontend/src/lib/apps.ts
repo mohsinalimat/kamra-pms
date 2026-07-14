@@ -39,12 +39,16 @@ import {
   ConciergeBell,
   Brush,
   Wrench,
-  PiggyBank,
+  TrendingUp,
+  ChartLine,
   ShieldCheck,
   Globe,
   Camera,
   HelpCircle,
   Search,
+  Lock,
+  AlarmClock,
+  LayoutDashboard,
 } from "lucide-react"
 
 export interface AppNavItem {
@@ -79,11 +83,14 @@ export const APPS: AppDef[] = [
     roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
     items: [
       { to: "/", label: "Today", icon: Home },
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { to: "/assistant", label: "Copilot", icon: Sparkles },
       { to: "/reservations", label: "Reservations", icon: ClipboardList },
+      { to: "/crs", label: "Central Reservations", icon: Search },
       { to: "/tape", label: "Tape Chart", icon: LayoutGrid },
       { to: "/calendar", label: "Calendar", icon: CalendarDays },
       { to: "/guests", label: "Guests", icon: Users },
+      { to: "/room-blocks", label: "Room Blocks", icon: Lock },
     ],
     extraPrefixes: ["/grc", "/cancelled", "/agents"],
   },
@@ -109,7 +116,22 @@ export const APPS: AppDef[] = [
     roles: ["Front Desk", "Hotel Admin", "System Manager", "Administrator"],
     items: [
       { to: "/tickets", label: "Guest Requests", icon: Ticket },
+      { to: "/ops-sla", label: "SLA Report", icon: AlarmClock },
       { to: "/shifts", label: "Shifts", icon: Clock },
+    ],
+  },
+  {
+    id: "fnb",
+    name: "F&B",
+    icon: UtensilsCrossed,
+    tint: "bg-orange-50 text-orange-700",
+    description: "Restaurant POS, kitchen display and the menu.",
+    roles: ["Front Desk", "Finance", "Hotel Admin", "System Manager", "Administrator"],
+    items: [
+      { to: "/pos", label: "Restaurant POS", icon: UtensilsCrossed },
+      { to: "/kitchen", label: "Kitchen Display", icon: ConciergeBell },
+      { to: "/menu-items", label: "Menu", icon: ClipboardList },
+      { to: "/outlets", label: "Outlets", icon: Store },
     ],
   },
   {
@@ -129,12 +151,12 @@ export const APPS: AppDef[] = [
   {
     id: "revenue",
     name: "Revenue",
-    icon: PiggyBank,
+    icon: TrendingUp,
     tint: "bg-amber-50 text-amber-700",
     description: "Rates, seasons, offers and the partners who sell you.",
     roles: ["Revenue Manager", "Hotel Admin", "System Manager", "Administrator"],
     items: [
-      { to: "/revenue-reports", label: "Revenue Reports", icon: PiggyBank },
+      { to: "/revenue-reports", label: "Revenue Reports", icon: ChartLine },
       { to: "/rate-plans", label: "Rate Plans", icon: Tags },
       { to: "/seasons", label: "Seasons", icon: CalendarDays },
       { to: "/guardrails", label: "Guardrails", icon: ShieldCheck },
@@ -170,6 +192,7 @@ export const APPS: AppDef[] = [
       { to: "/booking-settings/amenities", label: "Amenities", icon: ClipboardList },
       { to: "/booking-settings/photos", label: "Photos", icon: Camera },
       { to: "/booking-settings/policies", label: "Policies", icon: ScrollText },
+      { to: "/booking-settings/payments", label: "Payments", icon: Receipt },
       { to: "/booking-settings/faq", label: "FAQ", icon: HelpCircle },
       { to: "/booking-settings/seo", label: "SEO", icon: Search },
     ],

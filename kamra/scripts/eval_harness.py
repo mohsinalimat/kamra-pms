@@ -37,12 +37,32 @@ def check(name):
 
 
 def setup():
+	# the governed agent user posts public/HK/laundry charges. Role + user
+	# only - deliberately NOT seed_rbac_v2.ensure_agent_user(): its _grant
+	# writes custom DocPerms, and custom perms REPLACE the standard doctype
+	# perms, revoking other roles' access on a fresh (CI) site. The standard
+	# doctype JSONs already carry the Kamra Agent role.
+	if not frappe.db.exists("Role", "Kamra Agent"):
+		frappe.get_doc({
+			"doctype": "Role", "role_name": "Kamra Agent", "desk_access": 0,
+		}).insert(ignore_permissions=True)
+	if not frappe.db.exists("User", "agent@kamra.local"):
+		frappe.get_doc({
+			"doctype": "User", "email": "agent@kamra.local",
+			"first_name": "Kamra", "last_name": "Agent", "enabled": 1,
+			"user_type": "System User", "send_welcome_email": 0,
+			"roles": [{"role": "Kamra Agent"}],
+		}).insert(ignore_permissions=True)
 	if not frappe.db.exists("Property", P):
 		frappe.get_doc({
 			"doctype": "Property", "property_name": P, "city": "Testville",
 			"gst_mode": "Slab", "gst_slab_threshold": 7500,
 			"gst_rate_low": 5, "gst_rate_high": 18,
 		}).insert(ignore_permissions=True)
+	# many tests intentionally stack same-day stays on this tiny property;
+	# a generous allowance keeps them off the type-capacity guard (t32
+	# asserts that guard on its own isolated property)
+	frappe.db.set_value("Property", P, "overbooking_pct", 400)
 	rt = frappe.get_doc({
 		"doctype": "Room Type", "property": P, "room_type_code": "EVL",
 		"room_type_name": "Eval Room", "base_price": 4000,
@@ -493,6 +513,671 @@ def t19():
 	assert out["balance"] == 0, out["balance"]
 
 
+@check("room capacity: over-occupancy booking refused, at-capacity allowed")
+def t20():
+	g = _guest("Eval Crowd", "+91 70000 00020")
+	base = {
+		"doctype": "Reservation", "property": P, "guest": g,
+		"room_type": RT, "check_in_date": "2031-03-01",
+		"check_out_date": "2031-03-02", "auto_price": 1,
+	}
+	# the reported bug: 11 adults sailed into a 3-adult room type
+	try:
+		frappe.get_doc({**base, "adults": 11}).insert(ignore_permissions=True)
+		raise AssertionError("11 adults accepted in a 3-adult room type")
+	except frappe.ValidationError:
+		pass
+	try:
+		frappe.get_doc({**base, "adults": 2, "children": 5}).insert(
+			ignore_permissions=True)
+		raise AssertionError("5 children accepted in a 2-child room type")
+	except frappe.ValidationError:
+		pass
+	try:
+		frappe.get_doc({**base, "adults": 0}).insert(ignore_permissions=True)
+		raise AssertionError("a stay with no adults was accepted")
+	except frappe.ValidationError:
+		pass
+	# exactly at capacity is a legitimate full house
+	ok = frappe.get_doc({**base, "adults": 3, "children": 2, "room": ROOM}).insert(
+		ignore_permissions=True)
+	assert ok.name
+	# legacy over-capacity rows must still advance (e.g. check-out):
+	# only party/room-type edits re-trigger the guard
+	frappe.db.set_value("Reservation", ok.name, "adults", 9,
+		update_modified=False)
+	legacy = frappe.get_doc("Reservation", ok.name)
+	legacy.status = "Checked In"
+	legacy.save(ignore_permissions=True)  # must NOT throw
+	try:
+		legacy.adults = 12
+		legacy.save(ignore_permissions=True)
+		raise AssertionError("growing an over-capacity party was accepted")
+	except frappe.ValidationError:
+		pass
+
+
+@check("room block: held room leaves availability, release restores it")
+def t21():
+	from kamra import api
+	before = len(api.available_rooms(P, RT, "2033-01-10", "2033-01-12"))
+	assert before >= 1, before
+	b = api.create_room_block(P, ROOM, "2033-01-10", "2033-01-12",
+		"VIP Hold", "eval hold")
+	held = len(api.available_rooms(P, RT, "2033-01-10", "2033-01-12"))
+	assert held == before - 1, (before, held)
+	# a non-overlapping window is untouched
+	assert len(api.available_rooms(P, RT, "2033-02-01", "2033-02-02")) == before
+	api.release_room_block(b["name"])
+	assert len(api.available_rooms(P, RT, "2033-01-10", "2033-01-12")) == before
+	# can't hold a room that's already sold for the window
+	g = _guest("Eval Held", "+91 70000 00021")
+	_res(g, "2033-03-01", "2033-03-03", ROOM)
+	try:
+		api.create_room_block(P, ROOM, "2033-03-01", "2033-03-03", "Maintenance")
+		raise AssertionError("blocked an already-booked room")
+	except frappe.ValidationError:
+		pass
+
+
+@check("housekeeping assignment: assign, decline back to pool, claim")
+def t22():
+	from kamra import api
+	task = frappe.get_doc({
+		"doctype": "Housekeeping Task", "property": P, "room": ROOM,
+		"task_type": "Checkout Clean", "priority": "High", "status": "Pending",
+	}).insert(ignore_permissions=True).name
+	api.hk_assign_task(task, "Administrator")
+	d = frappe.get_doc("Housekeeping Task", task)
+	assert d.assignment_status == "Assigned" and d.assigned_to_user, d.assignment_status
+	api.hk_reject_task(task, "on break")
+	d.reload()
+	assert d.assignment_status == "Unassigned" and not d.assigned_to_user, "reject didn't free it"
+	assert d.reject_reason, "reject reason not recorded"
+	api.hk_claim_task(task)
+	d.reload()
+	assert d.assignment_status == "Accepted" and d.assigned_to_user, "claim failed"
+	# the queue splits mine vs claimable and carries the flags
+	q = api.hk_queue(P)
+	row = next(t for t in q["tasks"] if t["name"] == task)
+	assert row["mine"] and not row["claimable"], (row["mine"], row["claimable"])
+
+
+@check("housekeeping SLA: due_by set, overdue task escalates & breaches")
+def t23():
+	from frappe.utils import add_to_date, now_datetime
+	from kamra.housekeeping import escalate_overdue_tasks
+	# a task born already overdue (due_by in the past)
+	task = frappe.get_doc({
+		"doctype": "Housekeeping Task", "property": P, "room": ROOM,
+		"task_type": "Checkout Clean", "priority": "Urgent", "status": "Pending",
+	}).insert(ignore_permissions=True)
+	assert task.due_by, "SLA due_by not set on insert"
+	frappe.db.set_value("Housekeeping Task", task.name, "due_by",
+		add_to_date(now_datetime(), minutes=-90), update_modified=False)
+	escalate_overdue_tasks()
+	d = frappe.get_doc("Housekeeping Task", task.name)
+	# 90 min over on a 20-min SLA → straight to level 2 (manager)
+	assert d.breached == 1, "overdue task not marked breached"
+	assert d.escalation_level == 2, d.escalation_level
+
+
+@check("CRS access guard: a property-restricted user is blocked from others")
+def t24():
+	from kamra.crs import assert_property_access, permitted_properties
+	u = "eval.pinned@kamra.local"
+	if not frappe.db.exists("User", u):
+		frappe.get_doc({
+			"doctype": "User", "email": u, "first_name": "Pinned",
+			"send_welcome_email": 0, "roles": [{"role": "Front Desk"}],
+		}).insert(ignore_permissions=True)
+	if not frappe.db.exists("User Permission",
+	                        {"user": u, "allow": "Property", "for_value": P}):
+		frappe.get_doc({
+			"doctype": "User Permission", "user": u,
+			"allow": "Property", "for_value": P,
+		}).insert(ignore_permissions=True)
+	frappe.set_user(u)
+	try:
+		assert permitted_properties() == {P}, permitted_properties()
+		assert_property_access(P)  # the one they're allowed
+		try:
+			assert_property_access("Some Other Hotel XYZ")
+			raise AssertionError("guard let a restricted user reach another property")
+		except frappe.PermissionError:
+			pass
+		# and they can't create a booking at a property they can't see
+		from kamra import api
+		try:
+			api.create_booking(
+				property="Some Other Hotel XYZ", room_type="x",
+				check_in_date="2035-01-01", check_out_date="2035-01-02",
+				guest_name="Nope", phone="+91 70000 09999")
+			raise AssertionError("booked at an off-limits property")
+		except frappe.PermissionError:
+			pass
+	finally:
+		frappe.set_user("Administrator")
+
+
+@check("POS: order fires KOT, delivery posts F&B to the room folio with discount")
+def t25():
+	from kamra import pos
+	from kamra.folio import post_room_night
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Cafe",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	mi = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Dosa", "category": "Food", "price": 200,
+		"is_veg": 1, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+	g = _guest("Eval POS", "+91 70000 00025")
+	res = _res(g, "2034-01-01", "2034-01-02", ROOM)
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"})
+	base = frappe.get_doc("Folio", folio).grand_total
+
+	o = pos.create_order(outlet, [{"menu_item": mi, "qty": 2, "instructions": "hot"}],
+	                     room=ROOM)
+	assert o["order_total"] == 400, o["order_total"]
+	pos.apply_discount(o["order"], 50, "regular")
+	pos.confirm_order(o["order"])
+	pos.fire_kot(o["order"])
+	kq = pos.kitchen_queue(P)
+	assert any(row["name"] == o["order"] for row in kq), "order not on kitchen queue"
+	pos.mark_prepared(o["order"])
+	out = pos.deliver_order(o["order"])
+	assert out["posted_to_folio"], "delivered order did not post to folio"
+	fd = frappe.get_doc("Folio", folio)
+	# 350 net (400-50) + 5% F&B GST = 367.50 added
+	assert round(fd.grand_total - base, 2) == 367.50, fd.grand_total - base
+
+
+@check("POS: table map states, KOT numbering, void with reason, outlet settle")
+def t26():
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Diner",
+		"outlet_type": "Restaurant", "gst_rate": 5, "tables": "T1\nT2\nT3",
+	}).insert(ignore_permissions=True).name
+	mi1 = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Thali", "category": "Food", "price": 300,
+		"is_veg": 1, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+	mi2 = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Lassi", "category": "Beverage", "price": 100,
+		"is_veg": 1, "available": 1, "prep_station": "Bar",
+	}).insert(ignore_permissions=True).name
+
+	# the cleaning flag lives in redis, which the harness rollback doesn't
+	# touch - clear leftovers from any previous run first
+	for t in ("T1", "T2", "T3"):
+		pos.mark_table_clean(outlet, t)
+	tm = pos.table_map(outlet)
+	assert len(tm["tables"]) == 3, tm
+	assert all(t["state"] == "vacant" for t in tm["tables"]), tm
+
+	o = pos.create_order(outlet, [{"menu_item": mi1, "qty": 1},
+	                              {"menu_item": mi2, "qty": 2}],
+	                     table_no="T2", order_type="Dine In")
+	assert o["order_total"] == 500, o["order_total"]
+	t2 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "T2"][0]
+	assert t2["state"] == "running", t2
+
+	fk = pos.fire_kot(o["order"])
+	assert fk["kot_no"] >= 1, fk  # daily sequence per outlet
+	assert len(fk["fired_items"]) == 2, fk
+	t2 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "T2"][0]
+	assert t2["state"] == "fired", t2
+
+	# void the lassi line with a reason - totals shrink, the line stays
+	det = pos.order_detail(o["order"])
+	lassi = next(i for i in det["items"] if i["item_name"] == "Eval Lassi")
+	v = pos.void_item(o["order"], lassi["row"], "spilled")
+	assert v["order_total"] == 300, v
+
+	b = pos.bill_data(o["order"])
+	assert b["grand_total"] == 315.0 and b["cgst"] == 7.5, b
+
+	p = pos.pay_order(o["order"], "UPI")
+	assert p["paid"] and p["order_total"] == 300, p
+	doc = frappe.get_doc("POS Order", o["order"])
+	assert doc.status == "Delivered" and not doc.posted_to_folio, doc.status
+	# settling frees the table into Cleaning; Mark clean returns it to vacant
+	assert [t for t in pos.table_map(outlet)["tables"]
+	        if t["table"] == "T2"][0]["state"] == "cleaning"
+	pos.mark_table_clean(outlet, "T2")
+	assert [t for t in pos.table_map(outlet)["tables"]
+	        if t["table"] == "T2"][0]["state"] == "vacant"
+
+	# a second order the same day gets the next KOT number
+	o2 = pos.create_order(outlet, [{"menu_item": mi1, "qty": 1}],
+	                      order_type="Takeaway")
+	assert pos.fire_kot(o2["order"])["kot_no"] == fk["kot_no"] + 1
+	pos.cancel_order(o2["order"], "guest left")
+	assert frappe.db.get_value("POS Order", o2["order"], "status") == "Cancelled"
+
+
+@check("POS: two parties share a table, split bill conserves the total")
+def t27():
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Bistro",
+		"outlet_type": "Restaurant", "gst_rate": 5, "tables": "T1\nT2",
+	}).insert(ignore_permissions=True).name
+	mk = lambda n, p: frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": n, "category": "Food", "price": p,
+		"is_veg": 1, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+	soup, curry, rice = mk("Eval Soup", 150), mk("Eval Curry", 250), mk("Eval Rice", 100)
+
+	# party A and party B share T1 - two separate bills on one table
+	a = pos.create_order(outlet, [{"menu_item": soup, "qty": 1}], table_no="T1")
+	b = pos.create_order(outlet, [{"menu_item": curry, "qty": 1},
+	                              {"menu_item": rice, "qty": 2}], table_no="T1")
+	t1 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "T1"][0]
+	assert t1["bills"] == 2 and len(t1["orders"]) == 2, t1
+	assert t1["order_total"] == 600, t1  # 150 + 450
+	labels = {o["label"] for o in t1["orders"]}
+	assert labels == {"Table T1 · 1", "Table T1 · 2"}, labels
+
+	# split party B's bill: rice moves to its own bill, total conserved
+	pos.fire_kot(b["order"])
+	det = pos.order_detail(b["order"])
+	rice_row = next(i["row"] for i in det["items"] if i["item_name"] == "Eval Rice")
+	s = pos.split_order(b["order"], [rice_row])
+	assert s["source_total"] == 250 and s["new_total"] == 200, s
+	moved = pos.order_detail(s["new_order"])
+	assert moved["items"][0]["kot_status"] == "Fired", moved  # kitchen state kept
+	assert moved["table_no"] == "T1" and moved["kot_no"] == det["kot_no"], moved
+	t1 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "T1"][0]
+	assert t1["bills"] == 3 and t1["order_total"] == 600, t1
+
+	# guard: a split can't take every line
+	det_a = pos.order_detail(a["order"])
+	try:
+		pos.split_order(a["order"], [det_a["items"][0]["row"]])
+		raise AssertionError("split of every line was allowed")
+	except frappe.exceptions.ValidationError:
+		pass
+
+
+@check("POS: delivery & takeaway orders, seats, guests, recent bills")
+def t28():
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Express",
+		"outlet_type": "Restaurant", "gst_rate": 5, "tables": "T1:2\nT2:4",
+	}).insert(ignore_permissions=True).name
+	mi = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Biryani", "category": "Food", "price": 400,
+		"is_veg": 0, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+
+	# seats come from the "name:seats" layout
+	tm = pos.table_map(outlet)
+	assert [t["seats"] for t in tm["tables"]] == [2, 4], tm
+
+	# delivery needs the customer; carries name/phone/address end to end
+	try:
+		pos.create_order(outlet, [{"menu_item": mi, "qty": 1}],
+		                 order_type="Delivery")
+		raise AssertionError("delivery without customer accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+	d = pos.create_order(outlet, [{"menu_item": mi, "qty": 2}],
+	                     order_type="Delivery", customer_name="Asha Rao",
+	                     customer_phone="+91 90000 00028",
+	                     delivery_address="12 MG Road")
+	opened = [o for o in pos.open_orders(outlet) if o["name"] == d["order"]]
+	assert opened and opened[0]["label"] == "Delivery · Asha", opened
+	b = pos.bill_data(d["order"])
+	assert b["delivery_address"] == "12 MG Road", b
+
+	# dine-in with a guest count lands on the table tile
+	pos.create_order(outlet, [{"menu_item": mi, "qty": 1}],
+	                 table_no="T2", order_type="Dine In", guests=3)
+	t2 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "T2"][0]
+	assert t2["guests"] == 3 and t2["since"], t2
+
+	# recent bills reflect settlement
+	pos.fire_kot(d["order"])
+	pos.pay_order(d["order"], "UPI")
+	rec = [r for r in pos.recent_orders(outlet) if r["name"] == d["order"]]
+	assert rec and rec[0]["paid"] and rec[0]["payment_mode"] == "UPI", rec
+	assert not rec[0]["open"], rec
+
+
+@check("POS: table areas, temp-table tiles, NC bills at zero with auth")
+def t29():
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Terrace",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+		"tables": "[Hall]\nH1:4\nH2:2\n[Patio]\nP1:4",
+	}).insert(ignore_permissions=True).name
+	mi = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Kebab", "category": "Food", "price": 350,
+		"is_veg": 0, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+
+	# areas parse from the layout headers
+	tm = pos.table_map(outlet)
+	assert [(t["table"], t["area"]) for t in tm["tables"]] == [
+		("H1", "Hall"), ("H2", "Hall"), ("P1", "Patio")], tm
+
+	# a bill on a table outside the layout becomes a live temp tile
+	o = pos.create_order(outlet, [{"menu_item": mi, "qty": 1}],
+	                     table_no="Counter 2", order_type="Dine In")
+	tm = pos.table_map(outlet)
+	temp = [t for t in tm["tables"] if t.get("temp")]
+	assert len(temp) == 1 and temp[0]["table"] == "Counter 2", tm
+	assert temp[0]["area"] == "Temp" and temp[0]["state"] == "running", temp
+	assert not tm["other"], tm["other"]  # it's a tile now, not a loose tab
+
+	# NC: needs an authorizer, zeroes the bill, blocks payment, skips folio
+	try:
+		pos.mark_nc(o["order"], "")
+		raise AssertionError("NC without authorizer accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+	nc = pos.mark_nc(o["order"], "GM", "regular guest birthday")
+	assert nc["nc"] and nc["order_total"] == 0, nc
+	pos.fire_kot(o["order"])
+	b = pos.bill_data(o["order"])
+	assert b["grand_total"] == 0 and b["nc_authorized_by"] == "GM", b
+	assert b["nc_note"] == "regular guest birthday", b
+	try:
+		pos.pay_order(o["order"], "Cash")
+		raise AssertionError("NC bill accepted a payment")
+	except frappe.exceptions.ValidationError:
+		pass
+	out = pos.deliver_order(o["order"])
+	assert not out["posted_to_folio"], out
+	# undo path exists while a bill is open
+	o2 = pos.create_order(outlet, [{"menu_item": mi, "qty": 1}],
+	                      table_no="H1")
+	pos.mark_nc(o2["order"], "Chef")
+	back = pos.mark_nc(o2["order"], "", undo=1)
+	assert not back["nc"] and back["order_total"] == 350, back
+
+
+@check("POS: table reservation lifecycle and cleaning state")
+def t30():
+	from frappe.utils import add_to_date, now_datetime
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Garden",
+		"outlet_type": "Restaurant", "gst_rate": 5, "tables": "G1:4\nG2:2",
+	}).insert(ignore_permissions=True).name
+	mi = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Eval Salad", "category": "Food", "price": 200,
+		"is_veg": 1, "available": 1, "prep_station": "Kitchen",
+	}).insert(ignore_permissions=True).name
+
+	for t in ("G1", "G2"):  # redis cleaning flags survive the rollback
+		pos.mark_table_clean(outlet, t)
+
+	# reserve G1 an hour out - the tile flips to Reserved with the details
+	r = pos.reserve_table(outlet, "G1", "Asha Rao",
+	                      str(add_to_date(now_datetime(), hours=1)),
+	                      phone="+91 90000 00030", party_size=4)
+	g1 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "G1"][0]
+	assert g1["state"] == "reserved" and g1["res_guest"] == "Asha Rao", g1
+	assert g1["res_party"] == 4 and g1["res_time"], g1
+
+	# a reservation needs a guest name
+	try:
+		pos.reserve_table(outlet, "G2", "  ",
+		                  str(add_to_date(now_datetime(), hours=2)))
+		raise AssertionError("nameless reservation accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	# seating clears the Reserved state
+	pos.set_reservation(r["reservation"], "Seated")
+	g1 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "G1"][0]
+	assert g1["state"] == "vacant", g1
+
+	# settling the party's bill flags the table for cleaning...
+	o = pos.create_order(outlet, [{"menu_item": mi, "qty": 2}],
+	                     table_no="G1", order_type="Dine In", guests=4)
+	pos.fire_kot(o["order"])
+	pos.pay_order(o["order"], "Card")
+	g1 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "G1"][0]
+	assert g1["state"] == "cleaning", g1
+	# ...and Mark clean returns it to vacant
+	pos.mark_table_clean(outlet, "G1")
+	g1 = [t for t in pos.table_map(outlet)["tables"] if t["table"] == "G1"][0]
+	assert g1["state"] == "vacant", g1
+
+
+@check("laundry: rate card pricing, shortage guard, folio bill at 18% GST")
+def t31():
+	from kamra import laundry
+	from kamra.folio import post_room_night
+
+	# rate card: upsert enforces service names and positive rates
+	laundry.save_laundry_rate(P, "Shirt", "Wash & Iron", 60)
+	laundry.save_laundry_rate(P, "Trousers", "Dry Clean", 140, express_rate=200)
+	try:
+		laundry.save_laundry_rate(P, "Shirt", "Boil", 10)
+		raise AssertionError("bad service accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+	rates = laundry.laundry_rates(P)
+	assert {(r["item_name"], r["service_type"]) for r in rates} >= {
+		("Shirt", "Wash & Iron"), ("Trousers", "Dry Clean")}, rates
+	shirt = next(r for r in rates if r["item_name"] == "Shirt")
+	assert shirt["express_rate"] == 90, shirt  # blank express = 1.5x
+
+	# an in-house guest requests a pickup; the attendant counts the bag
+	# (own room - the shared eval room already has a checked-in stay)
+	lroom = frappe.db.exists("Room", {"property": P, "room_number": "E102"})
+	if not lroom:
+		lroom = frappe.get_doc({
+			"doctype": "Room", "property": P, "room_number": "E102",
+			"room_type": RT,
+		}).insert(ignore_permissions=True).name
+	else:
+		# a leaked E102 from an older run points at that run's room type;
+		# realign it so this run's capacity math counts both rooms
+		frappe.db.set_value("Room", lroom, "room_type", RT)
+	g = _guest("Eval Laundry", "+91 70000 00031")
+	res = _res(g, nowdate(), add_days(nowdate(), 2), lroom)
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"})
+	base = frappe.get_doc("Folio", folio).grand_total
+
+	r = laundry.request_pickup(P, lroom, notes="bag on door")
+	c = laundry.collect_laundry(P, lroom, [
+		{"item_name": "Shirt", "service_type": "Wash & Iron", "qty": 2},
+		{"item_name": "Trousers", "service_type": "Dry Clean", "qty": 1},
+	], order=r["order"])
+	assert c["total"] == 260 and c["pieces"] == 3, c
+	# unknown items can't be priced, so they can't be collected
+	try:
+		laundry.collect_laundry(P, lroom, [
+			{"item_name": "Cape", "service_type": "Dry Clean", "qty": 1}])
+		raise AssertionError("unpriced item accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	laundry.laundry_status(r["order"], "In Process")
+	laundry.laundry_status(r["order"], "Ready")
+	doc = frappe.get_doc("Laundry Order", r["order"])
+	laundry.return_items(r["order"], {doc.items[0].name: 2})
+	# a missing piece blocks delivery unless it's explicitly noted
+	try:
+		laundry.deliver_laundry(r["order"])
+		raise AssertionError("shortage delivered silently")
+	except frappe.exceptions.ValidationError:
+		pass
+	laundry.return_items(r["order"], {doc.items[1].name: 1})
+	out = laundry.deliver_laundry(r["order"])
+	assert out["posted_to_folio"], out
+
+	fd = frappe.get_doc("Folio", folio)
+	# 260 + 18% services GST = 306.80 lands on the guest folio
+	assert round(fd.grand_total - base, 2) == 306.80, fd.grand_total - base
+	board = laundry.laundry_board(P)
+	assert any(o["name"] == r["order"] for o in board["recent"]), board
+
+	# express pricing: explicit express column wins over the 1.5x default
+	c2 = laundry.collect_laundry(P, lroom, [
+		{"item_name": "Trousers", "service_type": "Dry Clean", "qty": 1},
+	], express=1)
+	assert c2["total"] == 200, c2
+
+
+@check("revenue: overbooking allowance, hurdle premium & floor, position briefing")
+def t32():
+	from kamra import api
+	from kamra.pricing import demand_tier, forecast_occupancy, quote
+
+	# isolated property so demand math isn't polluted by other tests
+	P2 = "EVAL Yield Hotel"
+	if not frappe.db.exists("Property", P2):
+		frappe.get_doc({
+			"doctype": "Property", "property_name": P2, "city": "Testville",
+			"gst_mode": "Fixed", "gst_rate_low": 5, "gst_rate_high": 5,
+		}).insert(ignore_permissions=True)
+	rt = frappe.get_doc({
+		"doctype": "Room Type", "property": P2, "room_type_code": "YLD",
+		"room_type_name": "Yield Room", "base_price": 4000,
+		"base_occupancy": 2, "adults_capacity": 3, "children_capacity": 2,
+		"tax_percent": 5,
+	}).insert(ignore_permissions=True).name
+	rooms = [frappe.get_doc({
+		"doctype": "Room", "property": P2, "room_number": f"Y10{i}",
+		"room_type": rt,
+	}).insert(ignore_permissions=True).name for i in (1, 2)]
+
+	seq = {"n": 40}
+
+	def book(ci, co, room=None):
+		seq["n"] += 1
+		g = _guest(f"Eval Yield {seq['n']}", f"+91 70000 000{seq['n']}")
+		return frappe.get_doc({
+			"doctype": "Reservation", "property": P2, "guest": g,
+			"room_type": rt, "room": room, "check_in_date": ci,
+			"check_out_date": co, "adults": 2, "auto_price": 1,
+		}).insert(ignore_permissions=True)
+
+	# 2 rooms, 0% allowance: the third unassigned booking must bounce
+	book("2031-03-01", "2031-03-02", rooms[0])
+	book("2031-03-01", "2031-03-02")
+	try:
+		book("2031-03-01", "2031-03-02")
+		raise AssertionError("oversell beyond capacity accepted at 0%")
+	except frappe.exceptions.ValidationError:
+		pass
+	# 50% allowance lifts the ceiling to 3
+	frappe.db.set_value("Property", P2, "overbooking_pct", 50)
+	frappe.get_cached_doc("Property", P2)  # refresh cache
+	frappe.clear_document_cache("Property", P2)
+	third = book("2031-03-01", "2031-03-02")
+	try:
+		book("2031-03-01", "2031-03-02")
+		raise AssertionError("oversell beyond the allowance accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	# demand tier: occupancy is 100%+ on that date -> premium + hurdle bite
+	assert forecast_occupancy(P2, "2031-03-01") >= 100
+	api.save_hurdle_rate(P2, 80, premium_pct=25, min_rate=5200)
+	tier = demand_tier(P2, rt, "2031-03-01")
+	assert tier and tier["premium_pct"] == 25, tier
+	q = quote(P2, rt, "2031-03-01", "2031-03-02", 2, 0)
+	assert q["nightly"][0]["rate"] == 5200, q["nightly"]  # 4000*1.25=5000 -> floor 5200
+	assert q["nightly"][0]["demand_premium_pct"] == 25, q["nightly"]
+	# a quiet date carries no premium
+	q2 = quote(P2, rt, "2031-06-01", "2031-06-02", 2, 0)
+	assert q2["nightly"][0]["rate"] == 4000, q2["nightly"]
+	# manual rates can't undercut the hurdle while the tier is active
+	try:
+		api.set_room_rate(P2, rt, "2031-03-01", "2031-03-02", 4500)
+		raise AssertionError("manual rate under the hurdle accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	# position briefing: ETA/ETD flow into arrivals/departures + conflicts
+	api.set_stay_times(third.name, "13:00", None)
+	pb = api.position_briefing(P2, "2031-03-01")
+	assert pb["capacity"] == 2 and pb["overbooking_limit"] == 3, pb
+	assert pb["occupancy"] >= 100, pb
+	arr = [a for a in pb["arrivals"] if a["name"] == third.name]
+	assert arr and arr[0]["eta"] == "13:00", arr
+	assert pb["demand_tier"] and pb["demand_tier"]["premium_pct"] == 25, pb
+
+
+@check("migration: vendor CSV maps, day-first dates, history stamped, misfits skipped")
+def t33():
+	from kamra import migrate
+
+	P3 = "EVAL Import Hotel"
+	if not frappe.db.exists("Property", P3):
+		frappe.get_doc({
+			"doctype": "Property", "property_name": P3, "city": "Testville",
+			"gst_mode": "Fixed", "gst_rate_low": 5, "gst_rate_high": 5,
+		}).insert(ignore_permissions=True)
+	rt = frappe.get_doc({
+		"doctype": "Room Type", "property": P3, "room_type_code": "DLX",
+		"room_type_name": "Deluxe", "base_price": 4000, "base_occupancy": 2,
+		"adults_capacity": 3, "children_capacity": 2, "tax_percent": 5,
+	}).insert(ignore_permissions=True).name
+	frappe.get_doc({
+		"doctype": "Room", "property": P3, "room_number": "I101",
+		"room_type": rt,
+	}).insert(ignore_permissions=True)
+
+	# an eZee-flavoured export: renamed headers, DD/MM dates, quoted name
+	# with a comma, thousands separators, vendor status words
+	csv_text = (
+		"Guest Name,Mobile No,Email,Room Type,Arrival Date,Departure Date,"
+		"Adult,Child,Total Amount,Reservation Status,Business Source\n"
+		'"Rao, Import",+91 70000 00033,rao@x.in,Deluxe,25/12/2025,'
+		'28/12/2025,2,1,"18,500.00",Checked Out,MakeMyTrip\n'
+		"Import Two,+91 70000 00034,,Deluxe Room,14/01/2026,16/01/2026,"
+		"2,0,,Cancelled,Walk-in\n"
+		"Import Three,+91 70000 00035,,Deluxe,20/08/2033,22/08/2033,"
+		"2,0,,Confirmed,Direct\n"
+		"Import Four,+91 70000 00036,,Presidential Villa,05/09/2033,"
+		"07/09/2033,2,0,,Confirmed,Direct\n")
+
+	p = migrate.preview_import(P3, csv_text, "auto")
+	assert p["mapping"]["check_in"] == "Arrival Date", p["mapping"]
+	assert p["date_format"].startswith("day-first"), p["date_format"]
+	assert p["ok"] == 3 and p["skipped"] == 1, (p["ok"], p["skipped"])
+	assert "Presidential Villa" in p["issues"][0]["error"], p["issues"]
+	assert p["sample"][0]["check_in"] == "2025-12-25", p["sample"][0]
+	assert p["sample"][0]["amount_after_tax"] == 18500.0, p["sample"][0]
+
+	r = migrate.run_import(P3, csv_text, "auto")
+	assert r["created"] == 3 and r["history"] == 2, r
+	assert len(r["errors"]) == 1, r["errors"]
+	first = frappe.get_doc("Reservation", r["reservations"][0])
+	# history keeps the vendor's final status and the fixed amount
+	assert first.status == "Checked Out", first.status
+	assert float(first.amount_after_tax) == 18500.0, first.amount_after_tax
+	assert frappe.db.get_value("Guest", first.guest, "email") == "rao@x.in"
+	# "Deluxe Room" fuzzy-resolved onto the Deluxe type
+	second = frappe.get_doc("Reservation", r["reservations"][1])
+	assert second.room_type == rt and second.status == "Cancelled", second
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -515,7 +1200,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

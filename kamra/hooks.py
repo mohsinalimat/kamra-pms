@@ -33,6 +33,8 @@ scheduler_events = {
 		# 09:00 - send self check-in links to upcoming arrivals, for properties
 		# that turned the setting on (a plain automation, not an agent)
 		"0 9 * * *": ["kamra.prearrival.run_prearrival_outreach"],
+		# every 15 min - escalate overdue housekeeping tasks up the ladder
+		"*/15 * * * *": ["kamra.housekeeping.escalate_overdue_tasks"],
 	},
 }
 
@@ -141,7 +143,7 @@ website_redirects = [
 # ------------
 
 # before_install = "kamra.install.before_install"
-# after_install = "kamra.install.after_install"
+after_install = "kamra.install.after_install"
 
 # Uninstallation
 # ------------
@@ -200,7 +202,8 @@ doc_events = {
 		"on_trash": "kamra.realtime.notify",
 	}
 	for doctype in ("Reservation", "Folio", "Room", "Housekeeping Task",
-	                "Venue Booking", "Group Booking")
+	                "Venue Booking", "Group Booking", "POS Order",
+	                "Service Ticket", "Agent Action Log")
 }
 
 # Scheduled Tasks

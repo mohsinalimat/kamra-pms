@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import type { ShellContext } from "../AppShell"
-import { ChevronDown, ChevronLeft, ChevronRight, Sparkles, Star } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight, Lock, Sparkles, Star } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
 import { listResource, serverError } from "../lib/resource"
 import { Badge } from "../components/ui/badge"
@@ -25,6 +25,19 @@ interface TapeBooking {
   company?: string | null
   travel_agent?: string | null
   group_booking?: string | null
+  planned_check_in_time?: string | null
+  planned_check_out_time?: string | null
+}
+
+/** "14:30:00" → "14:30" for display. */
+const hhmm = (t?: string | null) => (t ? String(t).slice(0, 5) : "")
+
+interface TapeBlock {
+  name: string
+  reason: string
+  from_date: string
+  to_date: string
+  note?: string | null
 }
 
 interface TapeRoom {
@@ -35,6 +48,7 @@ interface TapeRoom {
   floor?: string | null
   housekeeping_status: string
   bookings: TapeBooking[]
+  blocks?: TapeBlock[]
 }
 
 /** Who is coming - a visible marker on the bar + a label for the tooltip. */
@@ -53,10 +67,33 @@ function segment(b: TapeBooking): { label: string; dot: string; vip: boolean } {
   return { label: b.source || "Direct", dot: "bg-white/70", vip: false }
 }
 
+interface PositionCell {
+  date: string
+  sold: number
+  capacity: number
+  occupancy: number
+  limit: number
+  overbooked: boolean
+  premium_pct: number
+  min_rate: number
+}
+interface Changeover {
+  room: string
+  room_number: string
+  date: string
+  out_res: string
+  out_guest: string
+  etd: string
+  in_res: string
+  in_guest: string
+  eta: string
+}
 interface TapeData {
   start: string
   dates: string[]
   rooms: TapeRoom[]
+  position: PositionCell[]
+  conflicts: Changeover[]
 }
 
 interface HourlyBooking extends TapeBooking {
@@ -189,7 +226,8 @@ export default function TapeChart() {
     const hb = b as HourlyBooking
     setDraft({
       room: b.room, check_in: b.check_in_date, check_out: b.check_out_date,
-      from_time: hb.from_hour ?? "10:00", to_time: hb.to_hour ?? "18:00",
+      from_time: hhmm(b.planned_check_in_time) || hb.from_hour || "",
+      to_time: hhmm(b.planned_check_out_time) || hb.to_hour || "",
     })
     listResource("Room", {
       fields: ["name"],
@@ -300,6 +338,21 @@ export default function TapeChart() {
         <TapeHourly data={hourly} onOpen={openBooking} />
       )}
 
+      {/* back-to-back conflicts: the incoming guest lands before the room frees */}
+      {mode === "day" && (data?.conflicts?.length ?? 0) > 0 && (
+        <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <span className="font-semibold">
+            {data!.conflicts.length} changeover conflict{data!.conflicts.length === 1 ? "" : "s"}:
+          </span>{" "}
+          {data!.conflicts.map((c) => (
+            <span key={c.in_res} className="mr-3 whitespace-nowrap">
+              Room {c.room_number} on {new Date(c.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} —
+              out {c.etd} ({c.out_guest}) / in {c.eta} ({c.in_guest})
+            </span>
+          ))}
+        </div>
+      )}
+
       {mode === "day" && (
       <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
         <div style={{ minWidth: 130 + DAYS * cellW }}>
@@ -318,6 +371,27 @@ export default function TapeChart() {
                 </div>
               )
             })}
+          </div>
+          {/* house position: sold/capacity per day, demand premium, overbooking */}
+          <div className="flex border-b border-zinc-200 bg-white text-[10px]">
+            <div className="w-[130px] shrink-0 px-3 py-1 font-medium uppercase tracking-wide text-zinc-400">
+              Position
+            </div>
+            {data?.position?.map((p) => (
+              <div key={p.date} style={{ width: cellW }}
+                title={`${p.sold}/${p.capacity} sold (${p.occupancy}%)` +
+                  (p.limit > p.capacity ? ` · can sell to ${p.limit} (overbooking)` : "") +
+                  (p.premium_pct ? ` · demand premium +${p.premium_pct}%` : "") +
+                  (p.min_rate ? ` · hurdle ₹${p.min_rate.toLocaleString("en-IN")}` : "")}
+                className={cn("shrink-0 border-l border-zinc-100 px-1 py-1 text-center tabular-nums",
+                  p.overbooked ? "bg-rose-50 font-bold text-rose-600"
+                    : p.occupancy >= 80 ? "bg-emerald-50 font-semibold text-emerald-700"
+                      : p.occupancy >= 50 ? "text-amber-600" : "text-zinc-400")}>
+                {p.sold}/{p.capacity}
+                {p.premium_pct > 0 && <span className="ml-0.5 text-emerald-600">▲</span>}
+                {p.overbooked && " OB"}
+              </div>
+            ))}
           </div>
 
           {data &&
@@ -356,6 +430,28 @@ export default function TapeChart() {
                           <div key={d} style={{ width: cellW }}
                             className="shrink-0 border-l border-zinc-100" />
                         ))}
+                        {/* held-out-of-sale bands (house use, VIP, maintenance) */}
+                        {(room.blocks ?? []).map((k) => {
+                          const s = Math.max(0,
+                            (new Date(k.from_date).getTime() - new Date(data.start).getTime()) / 86_400_000)
+                          const e = Math.min(DAYS,
+                            (new Date(k.to_date).getTime() - new Date(data.start).getTime()) / 86_400_000)
+                          if (e <= 0 || s >= DAYS) return null
+                          return (
+                            <div key={k.name}
+                              style={{
+                                left: 130 + s * cellW + 2,
+                                width: (e - s) * cellW - 4,
+                                backgroundImage:
+                                  "repeating-linear-gradient(45deg, #d4d4d8 0 6px, #e4e4e7 6px 12px)",
+                              }}
+                              className="absolute top-1.5 flex h-8 items-center gap-1 truncate rounded-md border border-zinc-300 px-1.5 text-left text-[11px] font-medium text-zinc-600"
+                              title={`${k.reason}${k.note ? ` · ${k.note}` : ""} · ${k.from_date} → ${k.to_date}`}>
+                              <Lock className="size-3 shrink-0" aria-hidden />
+                              <span className="truncate">{k.reason}</span>
+                            </div>
+                          )
+                        })}
                         {/* booking bars */}
                         {room.bookings.map((b) => {
                           const s = Math.max(0,
@@ -364,6 +460,10 @@ export default function TapeChart() {
                           const e = Math.min(DAYS, b.is_day_use ? s + 1 : rawEnd)
                           if (e <= 0 || s >= DAYS) return null
                           const seg = segment(b)
+                          const eta = hhmm(b.planned_check_in_time)
+                          const etd = hhmm(b.planned_check_out_time)
+                          const inConflict = data.conflicts?.some(
+                            (c) => c.in_res === b.name || c.out_res === b.name)
                           return (
                             <button key={b.name}
                               onClick={() => openBooking(b)}
@@ -372,14 +472,22 @@ export default function TapeChart() {
                                 "absolute top-1.5 flex h-8 items-center gap-1 truncate rounded-md px-1.5 text-left text-xs font-medium text-white",
                                 b.status === "Checked In" ? "bg-brand-600 hover:bg-brand-700"
                                   : "bg-sky-500 hover:bg-sky-600",
+                                inConflict && "ring-2 ring-rose-500 ring-offset-1",
                               )}
-                              title={`${b.guest_name} · ${seg.label} · ${b.check_in_date} → ${b.check_out_date}`}>
+                              title={`${b.guest_name} · ${seg.label} · ${b.check_in_date}${eta ? ` ${eta}` : ""} → ${b.check_out_date}${etd ? ` ${etd}` : ""}` +
+                                (inConflict ? " · CHANGEOVER CONFLICT" : "")}>
                               {seg.vip ? (
                                 <Star className="size-3 shrink-0 fill-amber-300 text-amber-300" aria-hidden />
                               ) : (
                                 <span className={cn("size-2 shrink-0 rounded-full", seg.dot)} aria-hidden />
                               )}
-                              <span className="truncate">{b.guest_name}</span>
+                              <span className="truncate">
+                                {eta && <span className="mr-1 font-normal opacity-75">{eta}</span>}
+                                {b.guest_name}
+                              </span>
+                              {etd && (e - s) >= 2 && (
+                                <span className="ml-auto shrink-0 font-normal opacity-75">{etd}</span>
+                              )}
                             </button>
                           )
                         })}
@@ -407,6 +515,10 @@ export default function TapeChart() {
         </span>
         <span className="flex items-center gap-1">
           <span className="size-2 rounded-full bg-orange-400" /> OTA
+        </span>
+        <span className="flex items-center gap-1">
+          <Lock className="size-3 text-zinc-500" /> Held (house use / VIP /
+          maintenance)
         </span>
         <span>Click a bar to move rooms or change dates.</span>
       </div>
@@ -521,26 +633,30 @@ export default function TapeChart() {
                   onChange={(e) => setDraft({ ...draft, check_out: e.target.value })} />
               </label>
             </div>
-            {sel.is_day_use === 1 && (
-              <div className="rounded-lg border border-zinc-200 p-3">
-                <span className="mb-2 block text-sm font-medium text-zinc-600">
-                  Day-use hours
-                </span>
-                <div className="flex items-end gap-2">
-                  <input type="time" className={inputCls} value={draft.from_time}
-                    onChange={(e) => setDraft({ ...draft, from_time: e.target.value })} />
-                  <span className="pb-2 text-zinc-400">to</span>
-                  <input type="time" className={inputCls} value={draft.to_time}
-                    onChange={(e) => setDraft({ ...draft, to_time: e.target.value })} />
-                  <Button variant="outline" disabled={busy}
-                    onClick={() => act(() => call("kamra.api.set_day_use_times", {
-                      reservation: sel.name, from_time: draft.from_time,
-                      to_time: draft.to_time }))}>
-                    Set
-                  </Button>
-                </div>
+            <div className="rounded-lg border border-zinc-200 p-3">
+              <span className="mb-2 block text-sm font-medium text-zinc-600">
+                {sel.is_day_use === 1 ? "Day-use hours" : "Arrival / departure times (ETA · ETD)"}
+              </span>
+              <div className="flex items-end gap-2">
+                <input type="time" className={inputCls} value={draft.from_time}
+                  onChange={(e) => setDraft({ ...draft, from_time: e.target.value })} />
+                <span className="pb-2 text-zinc-400">to</span>
+                <input type="time" className={inputCls} value={draft.to_time}
+                  onChange={(e) => setDraft({ ...draft, to_time: e.target.value })} />
+                <Button variant="outline" disabled={busy}
+                  onClick={() => act(() => call("kamra.api.set_stay_times", {
+                    reservation: sel.name, eta: draft.from_time,
+                    etd: draft.to_time }))}>
+                  Set
+                </Button>
               </div>
-            )}
+              {sel.is_day_use !== 1 && (
+                <p className="mt-1.5 text-xs text-zinc-400">
+                  Times drive the house position: back-to-back rooms flag a
+                  conflict when the arrival lands before the departure.
+                </p>
+              )}
+            </div>
             <p className="text-xs text-zinc-400">
               Date changes re-price automatically (unless the booking holds a
               manual amount) and the double-booking guard re-checks the room.

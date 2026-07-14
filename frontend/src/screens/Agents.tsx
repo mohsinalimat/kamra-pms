@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useState } from "react"
 import {
   Bot,
   Check,
@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react"
 import { call, getCurrentProperty } from "../lib/api"
+import { useRealtime } from "../lib/realtime"
 import Assistant from "./Assistant"
 import { Badge } from "../components/ui/badge"
 import { Button } from "../components/ui/button"
@@ -23,6 +24,7 @@ import {
   CardTitle,
 } from "../components/ui/card"
 import { cn } from "../lib/utils"
+import { serverError } from "../lib/resource"
 
 
 interface AutonomyRule {
@@ -179,7 +181,7 @@ export function TeamTab({ property }: { property: string }) {
         setSavings(s)
         setError(null)
       })
-      .catch((e) => setError((e as Error).message))
+      .catch((e) => setError(serverError(e)))
       .finally(() => setLoading(false))
   }, [property])
 
@@ -196,7 +198,7 @@ export function TeamTab({ property }: { property: string }) {
       })
       load()
     } catch (e) {
-      setError((e as Error).message)
+      setError(serverError(e))
     } finally {
       setBusy(null)
     }
@@ -460,7 +462,7 @@ export function InboxTab({ property }: { property: string }) {
         setRows(r)
         setError(null)
       })
-      .catch((e) => setError((e as Error).message))
+      .catch((e) => setError(serverError(e)))
       .finally(() => setLoading(false))
   }, [property])
 
@@ -479,7 +481,7 @@ export function InboxTab({ property }: { property: string }) {
       setExpanded(null)
       load()
     } catch (e) {
-      setError((e as Error).message)
+      setError(serverError(e))
     } finally {
       setBusy(null)
     }
@@ -496,7 +498,7 @@ export function InboxTab({ property }: { property: string }) {
       setExpanded(null)
       load()
     } catch (e) {
-      setError((e as Error).message)
+      setError(serverError(e))
     } finally {
       setBusy(null)
     }
@@ -729,6 +731,14 @@ interface ActivityRow {
   minutes_saved: number
 }
 
+interface ActivityDetail extends ActivityRow {
+  executed_at: string | null
+  property: string
+  autonomy: string | null
+  before_snapshot: unknown
+  after_snapshot: unknown
+}
+
 const prettyAction = (t: string) =>
   t.replace(/^copilot_/, "").replace(/_/g, " ")
 
@@ -746,10 +756,24 @@ export function ActivityTab({ property }: { property: string }) {
   const [error, setError] = useState<string | null>(null)
   const [kind, setKind] = useState("")
   const [page, setPage] = useState(0)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [detail, setDetail] = useState<ActivityDetail | null>(null)
   const PAGE = 50
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const toggleRow = (rowName: string) => {
+    if (expanded === rowName) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(rowName)
+    setDetail(null)
+    call<ActivityDetail>("kamra.agents_api.activity_detail", { name: rowName })
+      .then(setDetail)
+      .catch(() => setDetail(null))
+  }
+
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true)
     call<ActivityRow[]>("kamra.agents_api.activity_feed", {
       property,
       actor_kind: kind || null,
@@ -760,9 +784,12 @@ export function ActivityTab({ property }: { property: string }) {
         setRows(r)
         setError(null)
       })
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false))
+      .catch((e) => setError(serverError(e)))
+      .finally(() => { if (!silent) setLoading(false) })
   }, [property, kind, page])
+
+  // live audit stream: refetch silently on any change (no loading flash)
+  useRealtime(useCallback(() => load(true), [load]))
 
   useEffect(() => {
     load()
@@ -815,7 +842,11 @@ export function ActivityTab({ property }: { property: string }) {
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {rows.map((r) => (
-                <tr key={r.name}>
+                <Fragment key={r.name}>
+                <tr
+                  className="cursor-pointer hover:bg-zinc-50"
+                  onClick={() => toggleRow(r.name)}
+                >
                   <td className="whitespace-nowrap px-3 py-2 text-xs text-zinc-500">
                     {fmtWhen(r.creation)}
                   </td>
@@ -853,6 +884,77 @@ export function ActivityTab({ property }: { property: string }) {
                     )}
                   </td>
                 </tr>
+                {expanded === r.name && (
+                  <tr className="bg-zinc-50/60">
+                    <td colSpan={5} className="px-4 py-3">
+                      {!detail ? (
+                        <p className="text-xs text-zinc-400">Loading…</p>
+                      ) : (
+                        <div className="space-y-3 text-sm">
+                          <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-4">
+                            {([
+                              ["Logged", fmtWhen(detail.creation)],
+                              ["Executed", detail.executed_at ? fmtWhen(detail.executed_at) : "-"],
+                              ["Actor", detail.actor ?? "system"],
+                              ["Agent", detail.agent_name ?? "-"],
+                              ["Channel", detail.action_channel ?? "-"],
+                              ["Autonomy", detail.autonomy ?? "-"],
+                              [
+                                "Reference",
+                                detail.reference_name
+                                  ? `${detail.reference_doctype} · ${detail.reference_name}`
+                                  : "-",
+                              ],
+                              [
+                                "Minutes saved",
+                                detail.minutes_saved ? String(detail.minutes_saved) : "-",
+                              ],
+                            ] as [string, string][]).map(([k, v]) => (
+                              <div key={k}>
+                                <dt className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                                  {k}
+                                </dt>
+                                <dd className="text-zinc-700">{v}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                          {detail.rationale && (
+                            <p className="text-zinc-600">
+                              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                                Why:{" "}
+                              </span>
+                              {detail.rationale}
+                            </p>
+                          )}
+                          {(detail.before_snapshot || detail.after_snapshot) != null && (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              {(
+                                [
+                                  ["Before", detail.before_snapshot],
+                                  ["After", detail.after_snapshot],
+                                ] as [string, unknown][]
+                              ).map(([label, snap]) =>
+                                snap == null ? null : (
+                                  <div key={label as string}>
+                                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                                      {label}
+                                    </p>
+                                    <pre className="max-h-56 overflow-auto rounded-lg border border-zinc-200 bg-white p-2.5 text-xs leading-relaxed text-zinc-700">
+                                      {typeof snap === "string"
+                                        ? snap
+                                        : JSON.stringify(snap, null, 2)}
+                                    </pre>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -948,7 +1050,7 @@ export function ConnectTab({ property }: { property: string }) {
                   )
                   setCreds(r)
                 } catch (e) {
-                  setError((e as Error).message)
+                  setError(serverError(e))
                 } finally {
                   setBusy(false)
                 }

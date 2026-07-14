@@ -15,9 +15,13 @@
   "priority",
   "status",
   "assigned_to_user",
+  "assignment_status",
   "due_by",
   "notes",
-  "reservation"
+  "reservation",
+  "reject_reason",
+  "breached",
+  "escalation_level"
  ],
  "fields": [
   {
@@ -72,6 +76,15 @@
    "options": "User"
   },
   {
+   "fieldname": "assignment_status",
+   "fieldtype": "Select",
+   "label": "Assignment",
+   "options": "Unassigned\nAssigned\nAccepted",
+   "default": "Unassigned",
+   "in_list_view": 1,
+   "description": "Who owns this task: Unassigned (in the pool), Assigned (given to someone, awaiting accept), Accepted (they took it)."
+  },
+  {
    "fieldname": "due_by",
    "fieldtype": "Datetime",
    "label": "Due By"
@@ -87,6 +100,26 @@
    "fieldtype": "Link",
    "label": "Reservation",
    "options": "Reservation"
+  },
+  {
+   "fieldname": "reject_reason",
+   "fieldtype": "Small Text",
+   "label": "Last Reject Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "breached",
+   "fieldtype": "Check",
+   "label": "SLA Breached",
+   "read_only": 1
+  },
+  {
+   "fieldname": "escalation_level",
+   "fieldtype": "Int",
+   "label": "Escalation Level",
+   "read_only": 1,
+   "default": "0",
+   "description": "0 = on time, 1 = escalated to supervisor, 2 = escalated to manager."
   }
  ],
  "grid_page_length": 50,

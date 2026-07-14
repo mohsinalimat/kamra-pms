@@ -16,7 +16,10 @@
   "price",
   "is_veg",
   "is_alcohol",
-  "available"
+  "available",
+  "image",
+  "description",
+  "prep_station"
  ],
  "fields": [
   {
@@ -78,6 +81,25 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Alcohol"
+  },
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "Photo",
+   "description": "Square 800x800px, JPG/WebP. Shown on the digital menu."
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "prep_station",
+   "fieldtype": "Select",
+   "label": "Prep Station",
+   "options": "Kitchen\nBar",
+   "default": "Kitchen",
+   "description": "Which KOT this item prints to."
   }
  ],
  "grid_page_length": 50,

@@ -125,6 +125,13 @@ EXTRA_TOOLS = {
 		"owner_briefing",
 		"The manager's numbers: occupancy, revenue/ADR/RevPAR, arrivals, tickets.",
 		{"date": {"type": "string"}}, True, False),
+	"position_briefing": (
+		"position_briefing",
+		"The hotel-position briefing for the GM/front desk: today's occupancy "
+		"vs the overbooking ceiling, arrivals with ETAs, departures with ETDs "
+		"and balances due, back-to-back room conflicts, the demand tier "
+		"pricing is applying, and a 7-day outlook.",
+		{"date": {"type": "string"}}, True, False),
 	"run_night_audit": (
 		"run_night_audit",
 		"Run end-of-day for a date: posts room nights, flags & charges no-shows.",

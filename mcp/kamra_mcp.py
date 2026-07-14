@@ -282,6 +282,17 @@ def owner_briefing(date: str = "") -> dict:
 
 
 @mcp.tool()
+def position_briefing(date: str = "") -> dict:
+    """The hotel-position briefing for the GM and front desk: today's
+    occupancy against the overbooking ceiling, arrivals sorted by ETA,
+    departures with ETDs and balances due, back-to-back room conflicts
+    (incoming guest lands before the outgoing one leaves), the demand
+    tier pricing is applying, and a 7-day occupancy outlook. Read it out
+    as a crisp shift briefing — never change the figures."""
+    return api("position_briefing", property=PROPERTY, date=date or None)
+
+
+@mcp.tool()
 def setup_property(payload: dict) -> dict:
     """Onboard a whole property in one call — the migration assistant's
     tool. Ask the hotel for their room list/rate card (any format), map
