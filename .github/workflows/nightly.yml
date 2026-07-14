@@ -176,6 +176,13 @@ jobs:
           fi
           df -h / | tail -1
           HEAL
+          # hot-patch the VPS's copy of redeploy.sh: the asset-sync tar
+          # follows symlinks with no cycle detection and twice grew to 80GB
+          # (the real cause of the 'log spammer' disk fills). Idempotent -
+          # once the pattern carries the fix, sed matches nothing.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
+            "sed -i 's|tar -C /home/frappe/frappe-bench -chf |timeout 300 tar -C /home/frappe/frappe-bench --exclude=node_modules -chf |' ~/kamra-deploy/redeploy.sh || true"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
             "bash ~/kamra-deploy/redeploy.sh nightly"

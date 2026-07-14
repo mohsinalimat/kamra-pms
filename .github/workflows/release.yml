@@ -127,6 +127,10 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
             "df -h / | tail -1; docker system prune -af 2>/dev/null | tail -1; df -h / | tail -1"
+          # same asset-tar bound as nightly (see nightly.yml) - idempotent
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
+            "sed -i 's|tar -C /home/frappe/frappe-bench -chf |timeout 300 tar -C /home/frappe/frappe-bench --exclude=node_modules -chf |' ~/kamra-deploy/redeploy.sh || true"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER:-root}@${DEPLOY_HOST}" \
             "bash ~/kamra-deploy/redeploy.sh stable '${{ steps.tag.outputs.tag }}'"
