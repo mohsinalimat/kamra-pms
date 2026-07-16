@@ -44,6 +44,7 @@ import AccountingExport from "./screens/AccountingExport"
 import TapeChart from "./screens/TapeChart"
 import Tickets from "./screens/Tickets"
 import Laundry from "./screens/Laundry"
+import MenuItems from "./screens/MenuItems"
 import Today from "./screens/Today"
 import {
   companiesConfig,
@@ -54,7 +55,6 @@ import {
   ratePlansConfig,
   reservationsConfig,
   roomBlocksConfig,
-  menuItemsConfig,
   outletsConfig,
   roomTypesConfig,
   roomsConfig,
@@ -269,7 +269,7 @@ export default function App() {
           <Route path="crs" element={<CRS />} />
           <Route path="pos" element={<POS />} />
           <Route path="kitchen" element={<Kitchen />} />
-          <Route path="menu-items" element={<ResourceScreen config={menuItemsConfig} />} />
+          <Route path="menu-items" element={<MenuItems />} />
           <Route path="outlets" element={<ResourceScreen config={outletsConfig} />} />
           <Route path="accounting-export" element={<AccountingExport />} />
           <Route path="tickets" element={<Tickets />} />

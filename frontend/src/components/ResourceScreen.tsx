@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type ComponentType } from "react"
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react"
 import { Columns3, Download, Plus, Search, Trash2 } from "lucide-react"
 import { Sheet } from "./ui/sheet"
 import { getCurrentProperty } from "../lib/api"
@@ -164,7 +170,14 @@ const cellValue = (v: unknown) =>
     ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 })
     : String(v ?? "-")
 
-export function ResourceScreen({ config }: { config: ScreenConfig }) {
+export function ResourceScreen({
+  config,
+  headerAction,
+}: {
+  config: ScreenConfig
+  /** Extra control rendered in the header next to New (e.g. a bulk import). */
+  headerAction?: ReactNode
+}) {
   const [rows, setRows] = useState<Row[]>([])
   const [editing, setEditing] = useState<Row | "new" | null>(null)
   const [draft, setDraft] = useState<Record<string, unknown>>({})
@@ -354,12 +367,15 @@ export function ResourceScreen({ config }: { config: ScreenConfig }) {
             </p>
           )}
         </div>
-        {config.allowCreate !== false && (
-          <Button onClick={() => openEdit("new")}>
-            <Plus className="size-4" aria-hidden />
-            New
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {headerAction}
+          {config.allowCreate !== false && (
+            <Button onClick={() => openEdit("new")}>
+              <Plus className="size-4" aria-hidden />
+              New
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {error && !editing && (
