@@ -402,6 +402,9 @@ def split_order(order: str, item_rows, table_no: str | None = None):
 			"menu_item": it.menu_item, "item_name": it.item_name,
 			"qty": it.qty, "rate": it.rate,
 			"instructions": it.instructions, "kot_status": it.kot_status,
+			# a split moves food that is already cooked and already deducted;
+			# carrying the flag is what stops the new bill deducting it twice
+			"stock_posted": it.stock_posted,
 		} for it in move],
 	})
 	new.insert()
@@ -493,14 +496,20 @@ def fire_kot(order: str, course: str | None = None):
 	courses = _courses_of(doc) if course else {}
 	now = frappe.utils.now()
 	fired = []
+	fired_rows = []
 	for it in doc.items:
 		if it.kot_status == "New" and not it.voided:
 			if course and courses.get(it.menu_item) != course:
 				continue
 			it.kot_status = "Fired"
 			it.fired_at = now
+			# what the till prints on the thermal ticket...
 			fired.append({"item_name": it.item_name, "qty": it.qty,
 			              "instructions": it.instructions})
+			# ...and what the stock engine needs. Kept apart deliberately:
+			# the ticket is a human artefact, this is bookkeeping.
+			fired_rows.append({"row": it.name, "menu_item": it.menu_item,
+			                   "qty": it.qty, "stock_posted": it.stock_posted})
 	if course and not fired:
 		frappe.throw(_("Nothing is held on that course."))
 	if not doc.kot_no:
@@ -513,8 +522,14 @@ def fire_kot(order: str, course: str | None = None):
 	if doc.status in ("Placed", "Confirmed"):
 		doc.status = "Preparing"
 	doc.save()
+	# Ingredients leave the shelf now - when the chef starts cooking - not when
+	# the bill is paid: a line voided after firing consumed real food and bills
+	# nothing. Never blocks; a short count must not stop service, it just
+	# reports itself as stale. See kamra/inventory.py.
+	from kamra.inventory import consume_for_lines
+	alerts = consume_for_lines(doc, fired_rows)
 	return {"ok": True, "status": doc.status, "kot_no": doc.kot_no,
-	        "nc": bool(doc.nc), "fired_items": fired}
+	        "nc": bool(doc.nc), "fired_items": fired, "stock_alerts": alerts}
 
 
 @frappe.whitelist()

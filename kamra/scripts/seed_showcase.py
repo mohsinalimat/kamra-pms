@@ -59,6 +59,65 @@ VENUES = [
 ]
 
 
+# Kitchen stock: (ingredient, uom, cost_per_unit, category)
+INGREDIENTS = [
+	("Paneer", "kg", 400, "Dairy"),
+	("Chicken", "kg", 320, "Meat"),
+	("Butter", "kg", 520, "Dairy"),
+	("Cream", "L", 260, "Dairy"),
+	("Tomato", "kg", 40, "Produce"),
+	("Onion", "kg", 35, "Produce"),
+	("Basmati Rice", "kg", 120, "Dry Goods"),
+	("Mixed Vegetables", "kg", 60, "Produce"),
+	("Dosa Batter", "L", 80, "Dry Goods"),
+	("Potato", "kg", 30, "Produce"),
+	("Gulab Jamun Mix", "kg", 180, "Dry Goods"),
+	("Sugar", "kg", 45, "Dry Goods"),
+	("Milk", "L", 60, "Dairy"),
+	("Coffee Powder", "kg", 900, "Dry Goods"),
+	("Lime", "pc", 4, "Bar"),
+	("Soda", "bottle", 25, "Bar"),
+	("Kingfisher Bottle", "bottle", 130, "Bar"),
+	("Cooking Oil", "L", 140, "Dry Goods"),
+	("Garam Masala", "kg", 700, "Dry Goods"),
+]
+
+# What one portion consumes: menu item -> [(ingredient, qty)]
+RECIPES = {
+	"Paneer Tikka": [("Paneer", 0.2), ("Onion", 0.05), ("Cream", 0.03),
+	                 ("Garam Masala", 0.005)],
+	"Butter Chicken": [("Chicken", 0.25), ("Butter", 0.04), ("Cream", 0.05),
+	                   ("Tomato", 0.15), ("Garam Masala", 0.008)],
+	"Masala Dosa": [("Dosa Batter", 0.15), ("Potato", 0.1), ("Onion", 0.03),
+	                ("Cooking Oil", 0.02)],
+	"Veg Biryani": [("Basmati Rice", 0.15), ("Mixed Vegetables", 0.12),
+	                ("Onion", 0.04), ("Garam Masala", 0.006)],
+	"Gulab Jamun": [("Gulab Jamun Mix", 0.06), ("Sugar", 0.05), ("Milk", 0.02)],
+	"Cold Coffee": [("Milk", 0.2), ("Coffee Powder", 0.01), ("Sugar", 0.02)],
+	"Fresh Lime Soda": [("Lime", 1), ("Soda", 1), ("Sugar", 0.015)],
+	# the 1:1 case - a bar is inventory's easiest win, and it proves the model
+	# handles stock that is never cooked at all
+	"Kingfisher Beer": [("Kingfisher Bottle", 1)],
+}
+
+# Opening stock per outlet: (ingredient, qty, par_level). Paneer opens BELOW
+# par on purpose, so the demo lands on a live amber flag with an 86 candidate
+# to click rather than a screen of green.
+OPENING = {
+	"The Terrace Restaurant": [
+		("Paneer", 0.4, 2), ("Chicken", 14, 5), ("Butter", 6, 2),
+		("Cream", 8, 3), ("Tomato", 12, 4), ("Onion", 20, 6),
+		("Basmati Rice", 25, 8), ("Mixed Vegetables", 9, 4),
+		("Dosa Batter", 10, 4), ("Potato", 15, 5),
+		("Gulab Jamun Mix", 3, 1), ("Sugar", 12, 4), ("Milk", 18, 6),
+		("Cooking Oil", 20, 5), ("Garam Masala", 2, 0.5),
+	],
+	"Poolside Bar": [
+		("Lime", 60, 20), ("Soda", 48, 12), ("Kingfisher Bottle", 72, 24),
+		("Milk", 10, 4), ("Coffee Powder", 2, 0.5), ("Sugar", 5, 2),
+	],
+}
+
 # POS: (outlet_name, outlet_type, gst%,
 #       [ (item, category, price, veg, station, course, allergens, img) ])
 POS = [
@@ -174,6 +233,49 @@ def execute():
 				"is_alcohol": 1 if cat == "Alcohol" else 0, "image": img,
 			}).insert(ignore_permissions=True)
 			added_item += 1
+
+	# kitchen stock: the ingredient master, then a recipe per dish, then what
+	# each outlet opens with
+	from kamra import inventory
+
+	ing_id = {}
+	for name, uom, cost, cat in INGREDIENTS:
+		existing = frappe.db.exists("Ingredient", {"property": PROPERTY,
+		                                           "ingredient_name": name})
+		if existing:  # keep costs and units current on a re-run
+			frappe.db.set_value("Ingredient", existing,
+			                    {"uom": uom, "cost_per_unit": cost, "category": cat})
+			ing_id[name] = existing
+			continue
+		ing_id[name] = frappe.get_doc({
+			"doctype": "Ingredient", "property": PROPERTY, "ingredient_name": name,
+			"uom": uom, "cost_per_unit": cost, "category": cat, "is_active": 1,
+		}).insert(ignore_permissions=True).name
+
+	for item_name, lines in RECIPES.items():
+		mi = frappe.db.exists("Menu Item", {"property": PROPERTY,
+		                                    "item_name": item_name})
+		if not mi:
+			continue
+		doc = frappe.get_doc("Menu Item", mi)
+		doc.set("recipe", [{"ingredient": ing_id[i], "qty": q} for i, q in lines])
+		doc.save(ignore_permissions=True)
+
+	for outlet_name, opening in OPENING.items():
+		outlet = frappe.db.exists("POS Outlet", {"property": PROPERTY,
+		                                         "outlet_name": outlet_name})
+		if not outlet:
+			continue
+		for name, qty, par in opening:
+			row = f"{outlet}::{ing_id[name]}"
+			if frappe.db.exists("Ingredient Stock", row):
+				continue  # already opened - never re-stock a live count
+			# through _apply_move, not a raw write, so the demo's ledger is
+			# real and the opening balance can be explained like any other move
+			inventory._apply_move(PROPERTY, outlet, ing_id[name], qty, "Opening",
+			                      note="Opening stock (demo seed)")
+			frappe.db.set_value("Ingredient Stock", row, "par_level", par,
+			                    update_modified=False)
 
 	# laundry rate card - the price list the attendant quotes from
 	LAUNDRY = [

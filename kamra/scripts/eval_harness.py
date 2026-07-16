@@ -1337,6 +1337,222 @@ def t35():
 	assert t2["items"][0]["course"] == "Main", t2["items"][0]["course"]
 
 
+@check("kitchen stock: fire deducts per outlet, shortage never blocks, ledger reconciles")
+def t36():
+	from kamra import inventory, pos
+	kitchen = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Stock Kitchen",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	bar = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Stock Bar",
+		"outlet_type": "Bar", "gst_rate": 18,
+	}).insert(ignore_permissions=True).name
+
+	def _ing(name, uom, cost):
+		return frappe.get_doc({
+			"doctype": "Ingredient", "property": P, "ingredient_name": name,
+			"uom": uom, "cost_per_unit": cost, "is_active": 1,
+		}).insert(ignore_permissions=True).name
+	paneer = _ing("Stock Paneer", "kg", 400)
+	chicken = _ing("Stock Chicken", "kg", 320)
+
+	def _dish(name, outlet, course, recipe):
+		return frappe.get_doc({
+			"doctype": "Menu Item", "property": P, "outlet": outlet,
+			"item_name": name, "category": "Food", "price": 300, "is_veg": 1,
+			"available": 1, "prep_station": "Kitchen", "course": course,
+			"recipe": [{"ingredient": i, "qty": q} for i, q in recipe],
+		}).insert(ignore_permissions=True).name
+	tikka = _dish("Stock Tikka", kitchen, "Starter", [(paneer, 0.2)])
+	curry = _dish("Stock Curry", kitchen, "Main", [(chicken, 0.25)])
+	water = _dish("Stock Water", kitchen, "Drink", [])  # no recipe, on purpose
+
+	def _bal(outlet, ing):
+		return frappe.db.get_value("Ingredient Stock", f"{outlet}::{ing}", "qty_on_hand")
+
+	inventory.receive_stock(P, kitchen, [{"ingredient": paneer, "qty": 1.0}],
+	                        supplier="Eval Farm")
+	assert _bal(kitchen, paneer) == 1.0, _bal(kitchen, paneer)
+	assert frappe.db.exists("Stock Ledger Entry",
+	                        {"ingredient": paneer, "reason": "Received",
+	                         "balance_after": 1.0}), "receipt left no ledger row"
+
+	# firing is what moves stock - the chef starting to cook, not the bill
+	o = pos.create_order(kitchen, [{"menu_item": tikka, "qty": 2}], table_no="S1")
+	assert _bal(kitchen, paneer) == 1.0, "stock moved before the KOT fired"
+	pos.fire_kot(o["order"])
+	assert abs(_bal(kitchen, paneer) - 0.6) < 1e-9, _bal(kitchen, paneer)
+
+	# stock is per outlet: the bar's paneer is not the kitchen's paneer
+	assert _bal(bar, paneer) is None, "firing at one outlet touched another"
+
+	# nothing but a fire moves stock: prepare/recall/prepare must be inert
+	before = _bal(kitchen, paneer)
+	pos.mark_prepared(o["order"])
+	pos.recall_prepared(o["order"])
+	pos.mark_prepared(o["order"])
+	assert _bal(kitchen, paneer) == before, "a non-fire transition moved stock"
+
+	# A SHORT COUNT MUST NEVER STOP SERVICE. The chef has the paneer in hand;
+	# it is the number that is wrong. Fire, go negative, say so loudly.
+	o2 = pos.create_order(kitchen, [{"menu_item": tikka, "qty": 10}], table_no="S2")
+	r2 = pos.fire_kot(o2["order"])
+	assert r2["ok"] and frappe.db.get_value("POS Order", o2["order"], "status") == "Preparing", r2
+	assert all(i.kot_status == "Fired"
+	           for i in frappe.get_doc("POS Order", o2["order"]).items), "a short count blocked the KOT"
+	assert _bal(kitchen, paneer) < 0, _bal(kitchen, paneer)
+	assert any(a["level"] == "negative" for a in r2["stock_alerts"]), r2["stock_alerts"]
+
+	# coursing: a held course is still on the shelf and must not be deducted
+	o3 = pos.create_order(kitchen, [{"menu_item": tikka, "qty": 1},
+	                                {"menu_item": curry, "qty": 1}], table_no="S3")
+	inventory.receive_stock(P, kitchen, [{"ingredient": chicken, "qty": 5.0}])
+	pos.fire_kot(o3["order"], course="Starter")
+	assert _bal(kitchen, chicken) == 5.0, "firing the starter consumed the main"
+	pos.fire_kot(o3["order"], course="Main")
+	assert abs(_bal(kitchen, chicken) - 4.75) < 1e-9, _bal(kitchen, chicken)
+	# and the starter is not deducted a second time by the main's fire
+	starter_moves = frappe.db.count(
+		"Stock Ledger Entry",
+		{"ingredient": paneer, "reference_name": o3["order"], "reason": "Consumed"})
+	assert starter_moves == 1, f"starter deducted {starter_moves} times"
+
+	# the optional in "optional recipe": no recipe, no ledger, no noise
+	rows_before = frappe.db.count("Stock Ledger Entry")
+	o4 = pos.create_order(kitchen, [{"menu_item": water, "qty": 3}], table_no="S4")
+	r4 = pos.fire_kot(o4["order"])
+	assert frappe.db.count("Stock Ledger Entry") == rows_before, "a recipe-less dish moved stock"
+	assert r4["stock_alerts"] == [], r4["stock_alerts"]
+
+	# the cache must never drift from the ledger - the one invariant that
+	# cannot bend, because every other number here is derived from it
+	for outlet, ing in ((kitchen, paneer), (kitchen, chicken)):
+		total = frappe.db.sql(
+			"""select sum(qty_change) from `tabStock Ledger Entry`
+			   where outlet=%s and ingredient=%s""", (outlet, ing))[0][0] or 0
+		assert abs(_bal(outlet, ing) - float(total)) < 1e-9, \
+			f"{ing} balance {_bal(outlet, ing)} != ledger {total}"
+
+
+@check("kitchen stock: post-fire void is wastage not a reversal, count is an explicit decision, no auto-86")
+def t37():
+	from kamra import inventory, pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Waste Kitchen",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	paneer = frappe.get_doc({
+		"doctype": "Ingredient", "property": P, "ingredient_name": "Waste Paneer",
+		"uom": "kg", "cost_per_unit": 400, "is_active": 1,
+	}).insert(ignore_permissions=True).name
+	tikka = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Waste Tikka", "category": "Food", "price": 300,
+		"is_veg": 1, "available": 1, "prep_station": "Tandoor", "course": "Starter",
+		"recipe": [{"ingredient": paneer, "qty": 0.2}],
+	}).insert(ignore_permissions=True).name
+
+	def _bal():
+		return frappe.db.get_value("Ingredient Stock", f"{outlet}::{paneer}", "qty_on_hand")
+
+	inventory.receive_stock(P, outlet, [{"ingredient": paneer, "qty": 5.0}])
+
+	# HEAT IS IRREVERSIBLE. A line voided after firing was cooked and binned:
+	# the paneer is gone whatever the bill says. Putting it back would be a
+	# lie that only surfaces at the next stock take.
+	o = pos.create_order(outlet, [{"menu_item": tikka, "qty": 2}], table_no="V1")
+	pos.fire_kot(o["order"])
+	after_fire = _bal()
+	row = pos.order_detail(o["order"])["items"][0]["row"]
+	pos.void_item(o["order"], row, reason="guest changed mind")
+	assert _bal() == after_fire, "a post-fire void reversed stock"
+	assert frappe.db.get_value("POS Order Item", row, "stock_posted") == 1
+	pos.acknowledge_void(o["order"], row)
+	assert _bal() == after_fire, "acknowledging a void moved stock"
+
+	# it surfaces as wastage instead - derived from the Consumed row that is
+	# already there, never a second ledger entry that would deduct twice
+	wr = inventory.wastage_report(P, outlet)
+	assert wr["total_value"] > 0, wr
+	assert wr["by_reason"][0]["reason"] == "guest changed mind", wr["by_reason"]
+
+	# spoilage is the opposite case: no POS line exists, so only a real
+	# Wastage row can say the stock left
+	before = _bal()
+	inventory.record_wastage(P, outlet, paneer, 0.5, "crate spoiled")
+	assert abs(_bal() - (before - 0.5)) < 1e-9, _bal()
+	assert frappe.db.exists("Stock Ledger Entry",
+	                        {"ingredient": paneer, "reason": "Wastage"})
+
+	# a cancelled order does not un-cook what was already fired
+	o2 = pos.create_order(outlet, [{"menu_item": tikka, "qty": 1}], table_no="V2")
+	pos.fire_kot(o2["order"])
+	held = _bal()
+	pos.cancel_order(o2["order"], reason="table walked")
+	assert _bal() == held, "cancelling an order reversed cooked food"
+
+	# a split moves food that is already cooked and already deducted; the
+	# copied stock_posted flag is what stops the new bill deducting again
+	o3 = pos.create_order(outlet, [{"menu_item": tikka, "qty": 1},
+	                               {"menu_item": tikka, "qty": 1}], table_no="V3")
+	pos.fire_kot(o3["order"])
+	pre_split = _bal()
+	rows = [i["row"] for i in pos.order_detail(o3["order"])["items"]]
+	split = pos.split_order(o3["order"], [rows[0]], table_no="V4")
+	assert _bal() == pre_split, "splitting a bill deducted the food twice"
+	new_rows = pos.order_detail(split["new_order"])["items"]
+	assert all(frappe.db.get_value("POS Order Item", i["row"], "stock_posted") == 1
+	           for i in new_rows), "split lines lost their stock_posted flag"
+
+	# THE ESCAPE HATCH: a count is how a human corrects everything the system
+	# cannot know. It demands a note - a write-off without a reason is exactly
+	# the silence this module exists to remove.
+	try:
+		inventory.adjust_stock(P, outlet, [{"ingredient": paneer, "counted_qty": 3}],
+		                       note="   ")
+		raise AssertionError("a stock take was accepted with no note")
+	except frappe.ValidationError:
+		pass
+	res = inventory.adjust_stock(P, outlet, [{"ingredient": paneer, "counted_qty": 3.0}],
+	                             note="recount after delivery")
+	assert _bal() == 3.0, _bal()
+	assert res["adjusted"][0]["variance"], res
+	assert frappe.db.exists("Stock Ledger Entry",
+	                        {"ingredient": paneer, "reason": "Count"})
+	assert frappe.db.get_value("Ingredient Stock", f"{outlet}::{paneer}",
+	                           "last_counted_at"), "a count left no counted-at stamp"
+
+	# NOTHING AUTO-86s. The count is the least trustworthy number in the
+	# building; a stale one must never silently hide a dish the kitchen can
+	# actually cook. Flag it, name the dishes it threatens, let a human decide.
+	o5 = pos.create_order(outlet, [{"menu_item": tikka, "qty": 30}], table_no="V5")
+	pos.fire_kot(o5["order"])
+	assert _bal() < 0, _bal()
+	assert frappe.db.get_value("Menu Item", tikka, "available") == 1, \
+		"an ingredient hitting zero auto-86'd a dish"
+	low = [r for r in inventory.low_stock(P, outlet) if r["ingredient"] == paneer]
+	assert low and low[0]["status"] == "NEGATIVE", low
+	assert any(d["name"] == tikka for d in low[0]["dishes"]), \
+		"the flag does not name the dish it takes down"
+	# and the 86 itself is a deliberate human act
+	inventory.set_menu_availability(tikka, 0)
+	assert frappe.db.get_value("Menu Item", tikka, "available") == 0
+
+	# looking is not moving: Front Desk reads stock, Finance moves it
+	me = frappe.session.user
+	try:
+		frappe.set_user("frontdesk@kamra.local")
+		inventory.stock_list(P, outlet)  # allowed
+		try:
+			inventory.receive_stock(P, outlet, [{"ingredient": paneer, "qty": 1}])
+			raise AssertionError("Front Desk was allowed to receive stock")
+		except frappe.PermissionError:
+			pass
+	finally:
+		frappe.set_user(me)
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -1359,7 +1575,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35, t36, t37):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

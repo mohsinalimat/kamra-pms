@@ -21,7 +21,9 @@
   "description",
   "course",
   "allergens",
-  "prep_station"
+  "prep_station",
+  "section_recipe",
+  "recipe"
  ],
  "fields": [
   {
@@ -116,6 +118,18 @@
    "options": "Kitchen\nTandoor\nGrill\nFryer\nBar",
    "default": "Kitchen",
    "description": "Which KOT this item prints to."
+  },
+  {
+   "fieldname": "section_recipe",
+   "fieldtype": "Section Break",
+   "label": "Recipe"
+  },
+  {
+   "fieldname": "recipe",
+   "fieldtype": "Table",
+   "label": "Recipe",
+   "options": "Menu Item Ingredient",
+   "description": "What one of these consumes from the outlet's stock when it is fired to the kitchen. Optional: leave it empty and this dish never touches inventory."
   }
  ],
  "grid_page_length": 50,
