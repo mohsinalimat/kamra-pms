@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom"
 import { call } from "../lib/api"
 import { Button } from "../components/ui/button"
 import { SignaturePad } from "../components/SignaturePad"
+import { GuestLaundryCard } from "./laundry/GuestLaundryCard"
 
 const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-base " +
@@ -132,6 +133,10 @@ export default function PublicCheckin() {
             Rooms ready from {p.checkin_time.slice(0, 5)}
           </p>
         </div>
+
+        {/* self-hides unless the reservation is actually Checked In —
+            stay.status here is the pre-check-in status, not the stay status */}
+        {token && <GuestLaundryCard token={token} />}
 
         {done ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800">

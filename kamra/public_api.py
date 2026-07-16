@@ -257,6 +257,89 @@ def precheckin_submit(token: str, id_type: str, id_number: str,
 	return {"ok": True, "reservation": res.name}
 
 
+# The governed writer: guest-initiated actions are always written as this user
+# so a guest can never post directly (same pattern as the QR order flow).
+GUEST_AGENT = "agent@kamra.local"
+
+
+@frappe.whitelist(allow_guest=True)
+def laundry_info(token: str):
+	"""Laundry price list + stay context for the in-stay guest page.
+	Read-only — the guest sees what things cost, never a folio."""
+	res = _res_by_token(token)
+	if res.status != "Checked In":
+		frappe.throw("Laundry pickup is available once you're checked in.")
+	guest = frappe.get_doc("Guest", res.guest)
+	rates = frappe.get_all(
+		"Laundry Rate",
+		filters={"property": res.property, "disabled": 0},
+		fields=["item_name", "service_type", "rate", "express_rate"],
+		order_by="item_name asc, service_type asc",
+	)
+	for r in rates:
+		r["express_rate"] = r["express_rate"] or round((r["rate"] or 0) * 1.5, 0)
+	# is there already an open pickup for this room? (so the page can say so)
+	pending = frappe.db.exists(
+		"Laundry Order",
+		{"room": res.room, "status": ["in", ["Requested", "Collected",
+		                                     "In Process", "Ready"]]})
+	return {
+		"reservation": res.name,
+		"room": res.room,
+		"room_no": (res.room or "").split("-")[-1],
+		"guest_name": guest.full_name,
+		"property": res.property,
+		"rates": rates,
+		"has_open_order": bool(pending),
+	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=10, seconds=3600)
+def request_guest_laundry(token: str, notes: str = "", express: int = 0):
+	"""In-house guest asks housekeeping to pick their laundry up. Written on
+	the guest's behalf by the governed agent — the guest never touches pricing
+	or the folio; staff count and price the bag at the door (status
+	'Requested', exactly where a staff-logged pickup lands)."""
+	res = _res_by_token(token)
+	if res.status != "Checked In":
+		frappe.throw("Laundry pickup is available once you're checked in.")
+	# don't stack duplicate open requests for the same room
+	existing = frappe.db.exists(
+		"Laundry Order", {"room": res.room, "status": "Requested"})
+	if existing:
+		return {"ok": True, "order": existing, "already": True}
+
+	me = frappe.session.user
+	frappe.set_user(GUEST_AGENT)
+	try:
+		doc = frappe.get_doc({
+			"doctype": "Laundry Order",
+			"property": res.property,
+			"room": res.room,
+			"reservation": res.name,
+			"status": "Requested",
+			"express": 1 if int(express or 0) else 0,
+			"notes": (notes or "").strip()[:200] or None,
+		})
+		doc.insert()
+	finally:
+		frappe.set_user(me)
+
+	from kamra.savings import log_action
+	log_action(
+		action_type="guest_laundry_request",
+		reference_doctype="Laundry Order",
+		reference_name=doc.name,
+		property=res.property,
+		rationale=f"Guest requested laundry pickup for {res.room}",
+		agent_name="Guest Self-Service",
+		channel="API",
+	)
+	frappe.db.commit()
+	return {"ok": True, "order": doc.name}
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=10, seconds=3600)
 def _advance_terms(prop, total: float) -> tuple[float, str]:
