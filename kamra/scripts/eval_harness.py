@@ -53,6 +53,20 @@ def setup():
 			"user_type": "System User", "send_welcome_email": 0,
 			"roles": [{"role": "Kamra Agent"}],
 		}).insert(ignore_permissions=True)
+	# the persona users the role-gate checks act as. seed_users.py is a demo
+	# script CI never runs, so relying on it left these users absent: set_user
+	# to a missing user yields no roles, which turns every "role X may not do
+	# Y" check into a pass for the wrong reason.
+	for email, first, role in (
+		("frontdesk@kamra.local", "Ravi", "Front Desk"),
+		("hk@kamra.local", "Lakshmi", "Housekeeping"),
+	):
+		if not frappe.db.exists("User", email):
+			frappe.get_doc({
+				"doctype": "User", "email": email, "first_name": first,
+				"enabled": 1, "user_type": "System User",
+				"send_welcome_email": 0, "roles": [{"role": role}],
+			}).insert(ignore_permissions=True)
 	if not frappe.db.exists("Property", P):
 		frappe.get_doc({
 			"doctype": "Property", "property_name": P, "city": "Testville",
