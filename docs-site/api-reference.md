@@ -5,7 +5,7 @@ outline: 2
 # REST API reference
 
 Every endpoint below is a whitelisted function — the same governed layer
-the UI and the AI use. **151 endpoints**, generated from the source
+the UI and the AI use. **150 endpoints**, generated from the source
 (`docs-site/gen_api.py`), so this page always matches the code.
 
 ## Calling convention
@@ -1862,29 +1862,6 @@ Stay summary for the pre-arrival check-in page.
 | Param | Required | Default |
 | --- | --- | --- |
 | `token` | yes |  |
-
-### `kamra.public_api.precheckin_submit` <Badge type='tip' text='public' />
-
-**POST**
-
-Guest completes pre-arrival check-in and signs the registration card
-(PRD FR-20 - details + declaration + e-signature; the signed card becomes
-the paperless GRC the desk views at arrival). ID photo/KYC vendor
-integration comes later.
-
-| Param | Required | Default |
-| --- | --- | --- |
-| `token` | yes |  |
-| `id_type` | yes |  |
-| `id_number` | yes |  |
-| `email` | no | `''` |
-| `nationality` | no | `''` |
-| `address_line` | no | `''` |
-| `city` | no | `''` |
-| `eta` | no | `''` |
-| `special_requests` | no | `''` |
-| `signature` | no | `''` |
-| `consent` | no | `0` |
 
 ### `kamra.public_api.laundry_info` <Badge type='tip' text='public' />
 
