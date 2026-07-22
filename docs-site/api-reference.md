@@ -5,7 +5,7 @@ outline: 2
 # REST API reference
 
 Every endpoint below is a whitelisted function — the same governed layer
-the UI and the AI use. **150 endpoints**, generated from the source
+the UI and the AI use. **178 endpoints**, generated from the source
 (`docs-site/gen_api.py`), so this page always matches the code.
 
 ## Calling convention
@@ -114,16 +114,6 @@ it (auto_price off); others are priced by the engine.
 | --- | --- | --- |
 | `property` | yes |  |
 | `bookings` | yes |  |
-
-### `kamra.api.registration_card`
-
-**GET/POST** · roles: `Front Desk`, `Kamra Agent`
-
-Everything the printed GRC (guest registration card) needs.
-
-| Param | Required | Default |
-| --- | --- | --- |
-| `reservation` | yes |  |
 
 ### `kamra.api.cash_summary`
 
@@ -321,6 +311,11 @@ Folio for a reservation - opens one if the guest is checked in.
 
 **GET/POST** · roles: `Finance`, `Front Desk`, `Kamra Agent`
 
+Record money received on the stay ledger. kind labels WHY it came
+in - Payment (against the bill), Advance (collected before/at
+check-in) or Security Deposit (held, refundable). Refunds go through
+refund_folio_payment so they can never be entered by accident.
+
 | Param | Required | Default |
 | --- | --- | --- |
 | `folio` | yes |  |
@@ -328,6 +323,37 @@ Folio for a reservation - opens one if the guest is checked in.
 | `amount` | yes |  |
 | `reference` | no | `None` |
 | `pin` | no | `None` |
+| `kind` | no | `'Payment'` |
+
+### `kamra.api.refund_folio_payment`
+
+**POST** · roles: `Finance`, `Front Desk`, `Kamra Agent`
+
+Give money back on an open folio - a held security deposit at
+checkout, or an over-collected advance. Stored as a negative ledger
+row so every balance still sums exactly; a reason is mandatory.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `folio` | yes |  |
+| `amount` | yes |  |
+| `mode` | yes |  |
+| `reason` | yes |  |
+| `pin` | no | `None` |
+
+### `kamra.api.set_actual_times`
+
+**POST** · roles: `Front Desk`, `Kamra Agent`
+
+Correct the recorded arrival/departure moments - early check-ins
+and late checkouts should show what actually happened, not just when
+the button was pressed. Early/late charges stay explicit folio lines.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `reservation` | yes |  |
+| `actual_check_in` | no | `None` |
+| `actual_check_out` | no | `None` |
 
 ### `kamra.api.void_folio_charge`
 
@@ -675,6 +701,58 @@ booker and the actions currently available. Powers the reservation drawer.
 | --- | --- | --- |
 | `reservation` | yes |  |
 
+### `kamra.api.upload_id_document`
+
+**POST** · roles: `Front Desk`, `Kamra Agent`
+
+Capture the guest's ID at the counter, when they never uploaded one.
+
+Same storage as the guest path, different gate: there the token proves
+ownership, here @require_roles does. This exists so that "never block
+check-in" has somewhere to go - the desk flags a missing document, then
+fixes it in the same breath instead of turning the guest away.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `reservation` | yes |  |
+| `data` | yes |  |
+
+### `kamra.api.id_document_image`
+
+**GET/POST** · roles: `Front Desk`, `Kamra Agent`
+
+The ID scan as a data URL, for the desk to eyeball.
+
+Why not just point an &lt;img> at the /private/files/ URL: Frappe would
+authorise that through File.has_permission -> the Reservation's own
+doctype permissions. On a site whose Custom DocPerm rows omit Front Desk
+(as ours do - any custom perm on a doctype REPLACES all its standard
+perms), that check says no, and the desk gets a broken image while a
+Hotel Admin sees it. Kamra's authorization has always lived on the
+endpoint rather than the doctype (see authz.py), so the image is served
+the same way as everything else here: one gate, one rule, works for
+every role the app actually grants.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `reservation` | yes |  |
+
+### `kamra.api.verify_precheckin`
+
+**POST** · roles: `Front Desk`, `Kamra Agent`
+
+The desk has held the document against the human and agrees.
+
+This is the write that finally makes precheckin_status="Verified" real -
+the enum has existed since pre-arrival check-in shipped and no code path
+ever set it. precheckin_submit already refuses to touch a Verified
+booking, so the guest is locked out of rewriting a checked card the
+moment this lands; that guard was clearly written for this.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `reservation` | yes |  |
+
 ### `kamra.api.check_in`
 
 **GET/POST** · roles: `Front Desk`, `Kamra Agent`
@@ -683,6 +761,20 @@ booker and the actions currently available. Powers the reservation drawer.
 | --- | --- | --- |
 | `reservation` | yes |  |
 | `room` | no | `None` |
+
+### `kamra.api.upload_guest_document`
+
+**POST** · roles: `Front Desk`, `Kamra Agent`
+
+The desk captures or replaces a guest's document while preparing
+the GRC - walk-ins, or a newer copy over last visit's. kind is 'id'
+or 'address'; stored privately, one current copy per slot.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `guest` | yes |  |
+| `kind` | yes |  |
+| `image` | yes |  |
 
 ### `kamra.api.cancellation_preview`
 
@@ -1245,6 +1337,7 @@ and delivery carry the customer's details instead of a table/room.
 | `customer_name` | no | `None` |
 | `customer_phone` | no | `None` |
 | `delivery_address` | no | `None` |
+| `allergy_note` | no | `None` |
 
 ### `kamra.pos.open_orders`
 
@@ -1390,16 +1483,37 @@ Send the order to the kitchen: new lines become Fired and show on the
 kitchen display. Stamps the KOT number (a daily sequence per outlet) and
 returns just-fired lines so the till can print the thermal KOT ticket.
 
+Pass a course to send only that course and hold the rest - the table
+orders once, the kitchen cooks the mains when the starters are cleared.
+Each line is stamped with the moment it was fired: that, not when the
+captain opened the tab, is when the cook's clock starts.
+
 | Param | Required | Default |
 | --- | --- | --- |
 | `order` | yes |  |
+| `course` | no | `None` |
 
 ### `kamra.pos.kitchen_queue`
 
 **GET/POST**
 
-The kitchen display: fired orders with items still to prepare. Scope
+The kitchen display: fired orders the kitchen still has work on. Scope
 to one outlet (each restaurant's own kitchen) and/or one station.
+
+Each line carries a `state` the screen renders directly:
+  cooking   - fired, still to make
+  held      - a later course, or a round added to a running tab; the
+              kitchen can see it coming but must not start it
+  cancelled - voided after the KOT fired; the chef may be cooking it right
+              now, so it stays on the ticket (loudly) until acknowledged
+  done      - already prepared; kept for context and to allow a recall
+
+A ticket is on the board while it has cooking, held or cancelled lines.
+Done lines ride along but never hold a ticket open, so "all ready" still
+clears it.
+
+`fired_at` per line is what the display ages against - a table that sat an
+hour over drinks must not hand the kitchen a ticket that is already red.
 
 | Param | Required | Default |
 | --- | --- | --- |
@@ -1411,12 +1525,48 @@ to one outlet (each restaurant's own kitchen) and/or one station.
 
 **POST**
 
-Kitchen marks one line (or the whole order) prepared.
+Kitchen marks one line (or every cooking line) prepared. Voided lines
+are never swept up by "all ready" - that food is cancelled, not cooked.
 
 | Param | Required | Default |
 | --- | --- | --- |
 | `order` | yes |  |
 | `item_row` | no | `None` |
+
+### `kamra.pos.accept_ticket`
+
+**POST**
+
+The kitchen takes the ticket on. Until a ticket is accepted the floor
+has no evidence anyone has seen it - a KOT can print to an empty pass.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+
+### `kamra.pos.recall_prepared`
+
+**POST**
+
+Undo a mark-prepared: the line goes back to Fired and reappears on the
+display. A mis-tap on a greasy touchscreen must not be one-way.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+| `item_row` | no | `None` |
+
+### `kamra.pos.acknowledge_void`
+
+**POST**
+
+The chef has seen that a fired line was cancelled and can stop cooking
+it; drop it from the display. The void itself stays on the order.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `order` | yes |  |
+| `item_row` | yes |  |
 
 ### `kamra.pos.deliver_order`
 
@@ -1532,6 +1682,20 @@ Add or edit one line of the rate card.
 | Param | Required | Default |
 | --- | --- | --- |
 | `name` | yes |  |
+
+### `kamra.laundry.import_laundry_rates`
+
+**POST**
+
+Bulk-load or bulk-update the rate card from a CSV - the same file
+the Export button produces (item, service, rate, express rate).
+Upserts by (item, service): existing rows update, new rows are
+created, nothing is deleted. Headers are matched tolerantly.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `csv_text` | yes |  |
 
 ### `kamra.laundry.request_pickup`
 
@@ -1671,6 +1835,268 @@ guest history survives the migration.
 | `property` | yes |  |
 | `csv_text` | yes |  |
 | `preset` | no | `'auto'` |
+
+
+## Inventory & recipes
+
+### `kamra.inventory.ingredients`
+
+**GET/POST**
+
+The ingredient master - the picker behind the recipe editor.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `active_only` | no | `1` |
+
+### `kamra.inventory.menu_recipe`
+
+**GET/POST**
+
+One dish's recipe, with each line's unit and what the dish's own outlet
+has on hand right now - so the editor can say "you have 0.4 kg left".
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `menu_item` | yes |  |
+
+### `kamra.inventory.recipe_overview`
+
+**GET/POST**
+
+Every dish and whether it has a recipe yet. Dishes without one are not
+a problem to be nagged about - most menus will only ever cost their big
+movers - but you cannot decide that without seeing the list.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+
+### `kamra.inventory.save_recipe`
+
+**POST** · roles: `Finance`, `Hotel Admin`
+
+Replace a dish's recipe wholesale. An empty list is valid and means
+"this dish never touches inventory" - the optional in the requirement.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `menu_item` | yes |  |
+| `rows` | yes |  |
+
+### `kamra.inventory.save_ingredient`
+
+**POST**
+
+Create or update one ingredient.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `ingredient_name` | yes |  |
+| `uom` | yes |  |
+| `category` | no | `None` |
+| `cost_per_unit` | no | `0` |
+| `is_active` | no | `1` |
+| `name` | no | `None` |
+
+### `kamra.inventory.delete_ingredient`
+
+**POST**
+
+Refuse if it is on a recipe or has history - deleting it would orphan a
+recipe or punch a hole in the ledger. Deactivate instead.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `name` | yes |  |
+
+### `kamra.inventory.receive_stock`
+
+**POST**
+
+Goods in. rows = [{ingredient, qty, cost_per_unit?}]. One batch_id ties
+the delivery together, which is why this needs no Stock Receipt doctype:
+a receipt is just its ledger rows plus a supplier and an invoice number.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | yes |  |
+| `rows` | yes |  |
+| `supplier` | no | `None` |
+| `invoice_no` | no | `None` |
+
+### `kamra.inventory.adjust_stock`
+
+**POST**
+
+The stock take, and the escape hatch for everything this module cannot
+know. rows = [{ingredient, counted_qty}] - COUNTS, not deltas, exactly
+like laundry's return_items: a human reports what is physically on the
+shelf and the system works out its own error.
+
+The note is required on purpose. A write-off with no reason is precisely
+the silence this module exists to remove - the same call laundry's
+shortage guard makes when it refuses to deliver a short bag unexplained.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | yes |  |
+| `rows` | yes |  |
+| `note` | yes |  |
+
+### `kamra.inventory.record_wastage`
+
+**POST**
+
+Stock destroyed OUTSIDE a sale: a crate of tomatoes rots, a bottle
+breaks. No POS line exists, so only a real ledger row can say it happened.
+
+Note what this is NOT for: food that was cooked and then voided. That
+already left the shelf at fire and already has its Consumed row - writing
+a Wastage row too would deduct it twice. Use wastage_report() for those.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | yes |  |
+| `ingredient` | yes |  |
+| `qty` | yes |  |
+| `reason_note` | yes |  |
+
+### `kamra.inventory.stock_list`
+
+**GET/POST**
+
+Everything this outlet holds. Stock is per outlet, so there is no such
+thing as a merged total across outlets and this never offers one.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | yes |  |
+| `status` | no | `None` |
+
+### `kamra.inventory.ingredient_ledger`
+
+**GET/POST**
+
+Where did my paneer go? Newest first, each row carrying the balance it
+produced, so the history explains the number on the shelf.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | yes |  |
+| `ingredient` | yes |  |
+| `limit` | no | `50` |
+
+### `kamra.inventory.low_stock`
+
+**GET/POST**
+
+Everything at or under par, out, or negative - and, for each, the
+dishes that use it. That last part is what makes the flag actionable:
+"Paneer is out" means nothing until you know it takes Paneer Tikka with
+it. We flag and offer; a human decides. Nothing is ever auto-86'd.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | no | `None` |
+
+### `kamra.inventory.wastage_report`
+
+**GET/POST**
+
+Food that was cooked and then binned: lines voided after they fired.
+
+Derived, deliberately. The stock already left at the fire and the Consumed
+row is the truth - a second Wastage row would deduct it twice, and a
+compensating pair would churn the ledger without changing a balance. This
+only asks which of those consumptions turned out to be waste, and what
+they cost. reason="Wastage" in the ledger stays reserved for stock
+destroyed outside a sale, so SUM(qty_change) always equals reality.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | no | `None` |
+| `days` | no | `30` |
+
+### `kamra.inventory.set_menu_availability`
+
+**POST** · roles: `Finance`, `Hotel Admin`
+
+86 a dish, or put it back. This is the ONLY thing that ever pulls an
+item off the menu for stock reasons, and a human has to press it.
+
+Nothing auto-86s on a zero balance, deliberately: the count is the least
+trustworthy number in the building (see this module's docstring), and a
+stale one would silently hide a dish the kitchen can actually cook. The
+screen flags what is out and offers the button; the decision stays with
+someone who can walk over and look at the shelf.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `menu_item` | yes |  |
+| `available` | yes |  |
+
+### `kamra.inventory.set_par_level`
+
+**POST**
+
+Where LOW starts for this ingredient at this outlet. Zero = no par.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `outlet` | yes |  |
+| `ingredient` | yes |  |
+| `par_level` | yes |  |
+
+
+## Menu bulk import
+
+### `kamra.menu_import.preview_menu_import`
+
+**POST**
+
+Dry run: how the columns map, what would be created vs updated, and
+every row that would be skipped. Nothing is written.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `csv_text` | yes |  |
+| `outlet` | no | `None` |
+
+### `kamra.menu_import.run_menu_import`
+
+**POST**
+
+Import the file. Upserts by (property, outlet, item_name): a dish
+already on that outlet's menu is updated (price/flags), never duplicated.
+One bad row never aborts the batch.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `property` | yes |  |
+| `csv_text` | yes |  |
+| `outlet` | no | `None` |
+| `update_existing` | no | `1` |
+
+### `kamra.menu_import.menu_template`
+
+**GET/POST**
+
+The CSV headers + one sample row, so the file starts out right.
+
+
+## Guest ID documents
 
 
 ## Central reservations (chain)
@@ -1862,6 +2288,29 @@ Stay summary for the pre-arrival check-in page.
 | Param | Required | Default |
 | --- | --- | --- |
 | `token` | yes |  |
+
+### `kamra.public_api.precheckin_upload_id` <Badge type='tip' text='public' />
+
+**POST**
+
+The guest photographs their ID during pre-arrival check-in.
+
+Deliberately NOT Frappe's upload_file. That endpoint would need the
+site-wide `allow_guests_to_upload_files` setting, which opens
+unauthenticated upload to the whole site; on its guest branch it sets
+ignore_permissions and never sees a token, so it cannot tell whether this
+guest owns this booking; and it takes is_private from the client - i.e.
+it trusts the browser to protect an Aadhaar scan. Here the token is the
+gate, the rate limit is real, and privacy is not negotiable.
+
+Optional by design: nothing downstream requires a document. A guest with
+a cracked camera or a bad lobby connection must still be able to
+pre-register, so the submit gate never mentions this.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `token` | yes |  |
+| `data` | yes |  |
 
 ### `kamra.public_api.laundry_info` <Badge type='tip' text='public' />
 

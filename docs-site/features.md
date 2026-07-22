@@ -56,7 +56,14 @@ thermal with the CGST/SGST split; walk-ins **settle by cash/card/UPI** at
 the outlet while room-service posts straight to the folio. Line voids and
 order cancellations require a reason, so the KOT-vs-bill audit holds up.
 Guests scan a **QR menu** to order — a captain confirms before anything
-fires.
+fires. The **kitchen display v2** works like a real pass: new KOTs chime
+in (sound toggle), the kitchen **accepts/starts** each ticket, items
+bump per station and course with **allergy highlighting**, guests and
+captain on every card, a timeline with progress, LATE/COOKING aging,
+and a **recall** when something bumped too soon. **Inventory & recipes**:
+ingredients with a stock ledger, recipes per menu item, consumption
+posted as KOTs fire; and the **menu imports in bulk** from a spreadsheet
+with a preview.
 
 ## Housekeeping
 

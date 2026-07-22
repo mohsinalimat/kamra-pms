@@ -350,6 +350,31 @@ def import_bookings(property: str, bookings):
 
 @frappe.whitelist()
 @require_roles("Front Desk", "Kamra Agent")
+def _stay_money(res):
+	"""The GRC's money line: what the stay owes and what's been taken -
+	advances and held deposits called out separately."""
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"},
+		["name", "grand_total", "payments_total", "balance"], as_dict=True)
+	if not folio:
+		return None
+	rows = frappe.get_all(
+		"Folio Payment", filters={"parent": folio.name},
+		fields=["payment_kind", "amount"])
+	def ksum(kind):
+		return sum(float(r.amount or 0) for r in rows
+		           if (r.payment_kind or "Payment") == kind)
+	return {
+		"folio": folio.name,
+		"grand_total": float(folio.grand_total or 0),
+		"paid_total": float(folio.payments_total or 0),
+		"balance": float(folio.balance or 0),
+		"advance": ksum("Advance"),
+		"deposit_held": ksum("Security Deposit") + ksum("Refund"),
+		"refunded": -ksum("Refund"),
+	}
+
+
 def registration_card(reservation: str):
 	"""Everything the printed GRC (guest registration card) needs."""
 	res = frappe.get_doc("Reservation", reservation)
@@ -365,7 +390,10 @@ def registration_card(reservation: str):
 			"checkin_time": str(prop.checkin_time or ""),
 			"checkout_time": str(prop.checkout_time or ""),
 		},
+		"money": _stay_money(res),
 		"reservation": {
+			"actual_check_in": str(res.actual_check_in) if res.get("actual_check_in") else None,
+			"actual_check_out": str(res.actual_check_out) if res.get("actual_check_out") else None,
 			"name": res.name, "status": res.status,
 			"room": (res.room or "").split("-")[-1],
 			"room_type": res.room_type.split("-")[-1],
@@ -386,6 +414,8 @@ def registration_card(reservation: str):
 			"email": guest.email, "nationality": guest.nationality,
 			"id_type": guest.id_type, "id_number": guest.id_number,
 			"id_file": guest.get("id_file"),
+			"address_proof_file": guest.get("address_proof_file"),
+			"guest_id": guest.name,
 			"address": ", ".join(filter(None, [
 				guest.get("address_line"), guest.get("city")])),
 		},
@@ -807,11 +837,21 @@ def _pin_guard(folio: str, pin=None):
 @frappe.whitelist()
 @require_roles("Finance", "Front Desk", "Kamra Agent")
 def add_folio_payment(folio: str, mode: str, amount: float,
-                      reference: str | None = None, pin: str | None = None):
+                      reference: str | None = None, pin: str | None = None,
+                      kind: str = "Payment"):
+	"""Record money received on the stay ledger. kind labels WHY it came
+	in - Payment (against the bill), Advance (collected before/at
+	check-in) or Security Deposit (held, refundable). Refunds go through
+	refund_folio_payment so they can never be entered by accident."""
+	if kind not in ("Payment", "Advance", "Security Deposit"):
+		frappe.throw("kind must be Payment, Advance or Security Deposit.")
+	if float(amount) <= 0:
+		frappe.throw("Amount must be positive.")
 	_pin_guard(folio, pin)
 	doc = frappe.get_doc("Folio", folio)
 	doc.append("payments", {
 		"posting_date": nowdate(),
+		"payment_kind": kind,
 		"mode": mode,
 		"amount": float(amount),
 		"reference": reference,
@@ -820,6 +860,67 @@ def add_folio_payment(folio: str, mode: str, amount: float,
 	_recalculate(doc)
 	doc.save()
 	return doc.as_dict()
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Finance", "Front Desk", "Kamra Agent")
+def refund_folio_payment(folio: str, amount: float, mode: str,
+                         reason: str, pin: str | None = None):
+	"""Give money back on an open folio - a held security deposit at
+	checkout, or an over-collected advance. Stored as a negative ledger
+	row so every balance still sums exactly; a reason is mandatory."""
+	if float(amount) <= 0:
+		frappe.throw("Refund amount must be positive.")
+	if not (reason or "").strip():
+		frappe.throw("A refund reason is required.")
+	_pin_guard(folio, pin)
+	doc = frappe.get_doc("Folio", folio)
+	if doc.status == "Closed":
+		frappe.throw("This folio is closed - refunds need a credit note "
+		             "via allowance on a new folio.")
+	received = sum(float(p.amount or 0) for p in doc.payments
+	               if float(p.amount or 0) > 0)
+	refunded = -sum(float(p.amount or 0) for p in doc.payments
+	                if float(p.amount or 0) < 0)
+	if float(amount) > received - refunded:
+		frappe.throw(f"Only ₹{received - refunded:,.2f} was collected on "
+		             "this folio - can't refund more than that.")
+	doc.append("payments", {
+		"posting_date": nowdate(),
+		"payment_kind": "Refund",
+		"mode": mode,
+		"amount": -float(amount),
+		"reference": reason.strip()[:140],
+	})
+	from kamra.folio import _recalculate
+	_recalculate(doc)
+	doc.save()
+	return {"ok": True, "balance": doc.balance}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def set_actual_times(reservation: str, actual_check_in: str | None = None,
+                     actual_check_out: str | None = None):
+	"""Correct the recorded arrival/departure moments - early check-ins
+	and late checkouts should show what actually happened, not just when
+	the button was pressed. Early/late charges stay explicit folio lines."""
+	from frappe.utils import get_datetime
+	updates = {}
+	if actual_check_in:
+		updates["actual_check_in"] = get_datetime(actual_check_in)
+	if actual_check_out:
+		updates["actual_check_out"] = get_datetime(actual_check_out)
+	if not updates:
+		frappe.throw("Nothing to update.")
+	frappe.db.set_value("Reservation", reservation, updates)
+	from kamra.savings import log_action
+	res = frappe.db.get_value("Reservation", reservation,
+	                          ["property", "guest_name"], as_dict=True)
+	log_action("set_actual_times", "Reservation", reservation, res.property,
+	           rationale=f"Actual times corrected for {res.guest_name}: "
+	                     + ", ".join(f"{k}={v}" for k, v in updates.items()))
+	return {"ok": True, **{k: str(v) for k, v in updates.items()}}
 
 
 _FNB_WORDS = ("food", "dinner", "lunch", "breakfast", "meal", "restaurant",
@@ -1690,6 +1791,15 @@ def reservation_detail(reservation: str):
 		"eta": res.eta,
 		"precheckin_status": res.precheckin_status,
 		"precheckin_token": res.get("precheckin_token"),
+		# the scan itself is never in this payload - id_document is only the
+		# private path, fetched separately through id_document_image so one
+		# role gate governs who ever sees the picture
+		"id_document": res.get("id_document"),
+		"id_document_source": res.get("id_document_source"),
+		"id_document_on": str(res.get("id_document_on") or "") or None,
+		"id_document_discarded": res.get("id_document_discarded") or 0,
+		"precheckin_verified_by": res.get("precheckin_verified_by"),
+		"precheckin_verified_on": str(res.get("precheckin_verified_on") or "") or None,
 		"amount_after_tax": float(res.amount_after_tax or 0),
 		"advance_paid": float(res.advance_paid or 0),
 		"company": res.company,
@@ -1705,7 +1815,95 @@ def reservation_detail(reservation: str):
 			"can_cancel": res.status in ("Confirmed", "Checked In"),
 			"can_amend": res.status in ("Confirmed", "Checked In"),
 		},
+		# Warnings are NOT capabilities, and they live apart on purpose. A
+		# missing ID must never appear in `actions` - the guest is standing
+		# at the desk with a physical card, and no arrival gets blocked over
+		# an upload that didn't happen. The desk sees it and decides.
+		"warnings": {
+			"id_document_missing": not res.get("id_document")
+			and not res.get("id_document_discarded"),
+			"id_unverified": res.precheckin_status == "Submitted",
+		},
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def upload_id_document(reservation: str, data: str):
+	"""Capture the guest's ID at the counter, when they never uploaded one.
+
+	Same storage as the guest path, different gate: there the token proves
+	ownership, here @require_roles does. This exists so that "never block
+	check-in" has somewhere to go - the desk flags a missing document, then
+	fixes it in the same breath instead of turning the guest away."""
+	from kamra.id_documents import store_id_document
+
+	res = frappe.get_doc("Reservation", reservation)
+	store_id_document(res, data, source="Desk")
+	from kamra.savings import log_action
+	log_action("id_document_capture", "Reservation", res.name, res.property,
+	           minutes_saved=1,
+	           rationale=f"ID captured at the desk for {res.guest_name}")
+	return {"ok": True}
+
+
+@frappe.whitelist()
+@require_roles("Front Desk", "Kamra Agent")
+def id_document_image(reservation: str):
+	"""The ID scan as a data URL, for the desk to eyeball.
+
+	Why not just point an <img> at the /private/files/ URL: Frappe would
+	authorise that through File.has_permission -> the Reservation's own
+	doctype permissions. On a site whose Custom DocPerm rows omit Front Desk
+	(as ours do - any custom perm on a doctype REPLACES all its standard
+	perms), that check says no, and the desk gets a broken image while a
+	Hotel Admin sees it. Kamra's authorization has always lived on the
+	endpoint rather than the doctype (see authz.py), so the image is served
+	the same way as everything else here: one gate, one rule, works for
+	every role the app actually grants.
+	"""
+	import base64
+
+	url = frappe.db.get_value("Reservation", reservation, "id_document")
+	if not url:
+		frappe.throw("No ID document on this booking.")
+	name = frappe.db.get_value("File", {
+		"attached_to_doctype": "Reservation", "attached_to_name": reservation,
+		"attached_to_field": "id_document",
+	})
+	if not name:
+		frappe.throw("That ID document is no longer stored.")
+	content = frappe.get_doc("File", name).get_content()
+	return {
+		"data": "data:image/jpeg;base64," + base64.b64encode(content).decode(),
+		"captured_on": str(frappe.db.get_value("Reservation", reservation,
+		                                       "id_document_on") or ""),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def verify_precheckin(reservation: str):
+	"""The desk has held the document against the human and agrees.
+
+	This is the write that finally makes precheckin_status="Verified" real -
+	the enum has existed since pre-arrival check-in shipped and no code path
+	ever set it. precheckin_submit already refuses to touch a Verified
+	booking, so the guest is locked out of rewriting a checked card the
+	moment this lands; that guard was clearly written for this."""
+	res = frappe.get_doc("Reservation", reservation)
+	if res.precheckin_status != "Submitted":
+		frappe.throw("Only a submitted pre-check-in can be verified.")
+	frappe.db.set_value("Reservation", res.name, {
+		"precheckin_status": "Verified",
+		"precheckin_verified_by": frappe.session.user,
+		"precheckin_verified_on": frappe.utils.now_datetime(),
+	})
+	from kamra.savings import log_action
+	log_action("verify_precheckin", "Reservation", res.name, res.property,
+	           minutes_saved=2,
+	           rationale=f"Desk verified {res.guest_name}'s ID against the document")
+	return {"ok": True, "status": "Verified"}
 
 
 @frappe.whitelist()
@@ -1723,6 +1921,23 @@ def check_in(reservation: str, room: str | None = None):
 	return {"ok": True, "reservation": doc.name, "room": doc.room}
 
 
+@frappe.whitelist(methods=["POST"])
+@require_roles("Front Desk", "Kamra Agent")
+def upload_guest_document(guest: str, kind: str, image: str):
+	"""The desk captures or replaces a guest's document while preparing
+	the GRC - walk-ins, or a newer copy over last visit's. kind is 'id'
+	or 'address'; stored privately, one current copy per slot."""
+	if kind not in ("id", "address"):
+		frappe.throw("kind must be 'id' or 'address'.")
+	if not frappe.db.exists("Guest", guest):
+		frappe.throw("Guest not found.")
+	field = "id_file" if kind == "id" else "address_proof_file"
+	from kamra.public_api import _save_id_image
+	url = _save_id_image(guest, image, field)
+	frappe.db.set_value("Guest", guest, field, url, update_modified=False)
+	return {"ok": True, "file": url}
+
+
 def _mask_id(value: str | None) -> str | None:
 	"""'987654321012' → '••••••••1012' - enough for the register audit
 	trail without holding the full number."""
@@ -1733,7 +1948,12 @@ def _mask_id(value: str | None) -> str | None:
 
 def _scrub_stay_ids(res):
 	"""Verify & Discard retention: after checkout, keep only the last 4
-	digits of every ID collected for the stay."""
+	digits of every ID collected for the stay - and the ID scan itself leaves
+	with the guest.
+
+	The scan has to go with the number. Masking the digits while a full
+	photograph of the same Aadhaar sits on disk would make the whole setting
+	a lie."""
 	if frappe.db.get_value("Property", res.property, "id_retention") \
 			!= "Verify & Discard":
 		return
@@ -1745,15 +1965,19 @@ def _scrub_stay_ids(res):
 	if guest_id:
 		frappe.db.set_value("Guest", res.guest, "id_number",
 		                    _mask_id(guest_id), update_modified=False)
-	# the ID photo is part of the same promise: verified, then discarded
-	if frappe.db.get_value("Guest", res.guest, "id_file"):
-		for f in frappe.get_all("File", filters={
-				"attached_to_doctype": "Guest",
-				"attached_to_name": res.guest,
-				"attached_to_field": "id_file"}, pluck="name"):
-			frappe.delete_doc("File", f, force=True, ignore_permissions=True)
-		frappe.db.set_value("Guest", res.guest, "id_file", None,
-		                    update_modified=False)
+	from kamra.id_documents import discard_id_document
+	discard_id_document(res.name)  # logs and moves on; never breaks checkout
+	# the document photos are part of the same promise: verified, discarded
+	for field in ("id_file", "address_proof_file"):
+		if frappe.db.get_value("Guest", res.guest, field):
+			for f in frappe.get_all("File", filters={
+					"attached_to_doctype": "Guest",
+					"attached_to_name": res.guest,
+					"attached_to_field": field}, pluck="name"):
+				frappe.delete_doc("File", f, force=True,
+				                  ignore_permissions=True)
+			frappe.db.set_value("Guest", res.guest, field, None,
+			                    update_modified=False)
 
 
 def _cancellation_terms(res):

@@ -251,43 +251,6 @@
      }
     },
     {
-     "name": "registration_card",
-     "request": {
-      "method": "POST",
-      "header": [
-       {
-        "key": "Content-Type",
-        "value": "application/json"
-       },
-       {
-        "key": "Authorization",
-        "value": "token {{api_key}}:{{api_secret}}"
-       }
-      ],
-      "url": {
-       "raw": "{{base_url}}/api/method/kamra.api.registration_card",
-       "host": [
-        "{{base_url}}"
-       ],
-       "path": [
-        "api",
-        "method",
-        "kamra.api.registration_card"
-       ]
-      },
-      "description": "Everything the printed GRC (guest registration card) needs.",
-      "body": {
-       "mode": "raw",
-       "raw": "{\n  \"reservation\": \"RES-2026-00001\"\n}",
-       "options": {
-        "raw": {
-         "language": "json"
-        }
-       }
-      }
-     }
-    },
-    {
      "name": "cash_summary",
      "request": {
       "method": "POST",
@@ -904,10 +867,84 @@
         "kamra.api.add_folio_payment"
        ]
       },
-      "description": "",
+      "description": "Record money received on the stay ledger. kind labels WHY it came\nin - Payment (against the bill), Advance (collected before/at\ncheck-in) or Security Deposit (held, refundable). Refunds go through\nrefund_folio_payment so they can never be entered by accident.",
       "body": {
        "mode": "raw",
-       "raw": "{\n  \"folio\": \"FOLIO-2026-00001\",\n  \"mode\": \"<mode>\",\n  \"amount\": 1000\n}",
+       "raw": "{\n  \"folio\": \"FOLIO-2026-00001\",\n  \"mode\": \"<mode>\",\n  \"amount\": 1000,\n  \"kind\": \"Payment\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "refund_folio_payment",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.api.refund_folio_payment",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.api.refund_folio_payment"
+       ]
+      },
+      "description": "Give money back on an open folio - a held security deposit at\ncheckout, or an over-collected advance. Stored as a negative ledger\nrow so every balance still sums exactly; a reason is mandatory.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"folio\": \"FOLIO-2026-00001\",\n  \"amount\": 1000,\n  \"mode\": \"<mode>\",\n  \"reason\": \"<reason>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "set_actual_times",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.api.set_actual_times",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.api.set_actual_times"
+       ]
+      },
+      "description": "Correct the recorded arrival/departure moments - early check-ins\nand late checkouts should show what actually happened, not just when\nthe button was pressed. Early/late charges stay explicit folio lines.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"reservation\": \"RES-2026-00001\"\n}",
        "options": {
         "raw": {
          "language": "json"
@@ -2009,6 +2046,117 @@
      }
     },
     {
+     "name": "upload_id_document",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.api.upload_id_document",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.api.upload_id_document"
+       ]
+      },
+      "description": "Capture the guest's ID at the counter, when they never uploaded one.\n\nSame storage as the guest path, different gate: there the token proves\nownership, here @require_roles does. This exists so that \"never block\ncheck-in\" has somewhere to go - the desk flags a missing document, then\nfixes it in the same breath instead of turning the guest away.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"reservation\": \"RES-2026-00001\",\n  \"data\": \"<data>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "id_document_image",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.api.id_document_image",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.api.id_document_image"
+       ]
+      },
+      "description": "The ID scan as a data URL, for the desk to eyeball.\n\nWhy not just point an <img> at the /private/files/ URL: Frappe would\nauthorise that through File.has_permission -> the Reservation's own\ndoctype permissions. On a site whose Custom DocPerm rows omit Front Desk\n(as ours do - any custom perm on a doctype REPLACES all its standard\nperms), that check says no, and the desk gets a broken image while a\nHotel Admin sees it. Kamra's authorization has always lived on the\nendpoint rather than the doctype (see authz.py), so the image is served\nthe same way as everything else here: one gate, one rule, works for\nevery role the app actually grants.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"reservation\": \"RES-2026-00001\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "verify_precheckin",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.api.verify_precheckin",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.api.verify_precheckin"
+       ]
+      },
+      "description": "The desk has held the document against the human and agrees.\n\nThis is the write that finally makes precheckin_status=\"Verified\" real -\nthe enum has existed since pre-arrival check-in shipped and no code path\never set it. precheckin_submit already refuses to touch a Verified\nbooking, so the guest is locked out of rewriting a checked card the\nmoment this lands; that guard was clearly written for this.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"reservation\": \"RES-2026-00001\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
      "name": "check_in",
      "request": {
       "method": "POST",
@@ -2037,6 +2185,43 @@
       "body": {
        "mode": "raw",
        "raw": "{\n  \"reservation\": \"RES-2026-00001\",\n  \"room\": \"Your Property-101\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "upload_guest_document",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.api.upload_guest_document",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.api.upload_guest_document"
+       ]
+      },
+      "description": "The desk captures or replaces a guest's document while preparing\nthe GRC - walk-ins, or a newer copy over last visit's. kind is 'id'\nor 'address'; stored privately, one current copy per slot.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"guest\": \"G-00001\",\n  \"kind\": \"<kind>\",\n  \"image\": \"<image>\"\n}",
        "options": {
         "raw": {
          "language": "json"
@@ -3999,7 +4184,7 @@
         "kamra.pos.fire_kot"
        ]
       },
-      "description": "Send the order to the kitchen: new lines become Fired and show on the\nkitchen display. Stamps the KOT number (a daily sequence per outlet) and\nreturns just-fired lines so the till can print the thermal KOT ticket.",
+      "description": "Send the order to the kitchen: new lines become Fired and show on the\nkitchen display. Stamps the KOT number (a daily sequence per outlet) and\nreturns just-fired lines so the till can print the thermal KOT ticket.\n\nPass a course to send only that course and hold the rest - the table\norders once, the kitchen cooks the mains when the starters are cleared.\nEach line is stamped with the moment it was fired: that, not when the\ncaptain opened the tab, is when the cook's clock starts.",
       "body": {
        "mode": "raw",
        "raw": "{\n  \"order\": \"ORD-2026-00001\"\n}",
@@ -4036,7 +4221,7 @@
         "kamra.pos.kitchen_queue"
        ]
       },
-      "description": "The kitchen display: fired orders with items still to prepare. Scope\nto one outlet (each restaurant's own kitchen) and/or one station.",
+      "description": "The kitchen display: fired orders the kitchen still has work on. Scope\nto one outlet (each restaurant's own kitchen) and/or one station.\n\nEach line carries a `state` the screen renders directly:\n  cooking   - fired, still to make\n  held      - a later course, or a round added to a running tab; the\n              kitchen can see it coming but must not start it\n  cancelled - voided after the KOT fired; the chef may be cooking it right\n              now, so it stays on the ticket (loudly) until acknowledged\n  done      - already prepared; kept for context and to allow a recall\n\nA ticket is on the board while it has cooking, held or cancelled lines.\nDone lines ride along but never hold a ticket open, so \"all ready\" still\nclears it.\n\n`fired_at` per line is what the display ages against - a table that sat an\nhour over drinks must not hand the kitchen a ticket that is already red.",
       "body": {
        "mode": "raw",
        "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\"\n}",
@@ -4073,10 +4258,121 @@
         "kamra.pos.mark_prepared"
        ]
       },
-      "description": "Kitchen marks one line (or the whole order) prepared.",
+      "description": "Kitchen marks one line (or every cooking line) prepared. Voided lines\nare never swept up by \"all ready\" - that food is cancelled, not cooked.",
       "body": {
        "mode": "raw",
        "raw": "{\n  \"order\": \"ORD-2026-00001\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "accept_ticket",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.pos.accept_ticket",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.pos.accept_ticket"
+       ]
+      },
+      "description": "The kitchen takes the ticket on. Until a ticket is accepted the floor\nhas no evidence anyone has seen it - a KOT can print to an empty pass.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"order\": \"ORD-2026-00001\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "recall_prepared",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.pos.recall_prepared",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.pos.recall_prepared"
+       ]
+      },
+      "description": "Undo a mark-prepared: the line goes back to Fired and reappears on the\ndisplay. A mis-tap on a greasy touchscreen must not be one-way.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"order\": \"ORD-2026-00001\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "acknowledge_void",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.pos.acknowledge_void",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.pos.acknowledge_void"
+       ]
+      },
+      "description": "The chef has seen that a fired line was cancelled and can stop cooking\nit; drop it from the display. The void itself stays on the order.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"order\": \"ORD-2026-00001\",\n  \"item_row\": \"<item_row>\"\n}",
        "options": {
         "raw": {
          "language": "json"
@@ -4415,6 +4711,43 @@
       "body": {
        "mode": "raw",
        "raw": "{\n  \"name\": \"<name>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "import_laundry_rates",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.laundry.import_laundry_rates",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.laundry.import_laundry_rates"
+       ]
+      },
+      "description": "Bulk-load or bulk-update the rate card from a CSV - the same file\nthe Export button produces (item, service, rate, express rate).\nUpserts by (item, service): existing rows update, new rows are\ncreated, nothing is deleted. Headers are matched tolerantly.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"csv_text\": \"<csv_text>\"\n}",
        "options": {
         "raw": {
          "language": "json"
@@ -4799,6 +5132,677 @@
      }
     }
    ]
+  },
+  {
+   "name": "Inventory & recipes",
+   "item": [
+    {
+     "name": "ingredients",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.ingredients",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.ingredients"
+       ]
+      },
+      "description": "The ingredient master - the picker behind the recipe editor.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"active_only\": 1\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "menu_recipe",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.menu_recipe",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.menu_recipe"
+       ]
+      },
+      "description": "One dish's recipe, with each line's unit and what the dish's own outlet\nhas on hand right now - so the editor can say \"you have 0.4 kg left\".",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"menu_item\": \"<menu_item>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "recipe_overview",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.recipe_overview",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.recipe_overview"
+       ]
+      },
+      "description": "Every dish and whether it has a recipe yet. Dishes without one are not\na problem to be nagged about - most menus will only ever cost their big\nmovers - but you cannot decide that without seeing the list.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "save_recipe",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.save_recipe",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.save_recipe"
+       ]
+      },
+      "description": "Replace a dish's recipe wholesale. An empty list is valid and means\n\"this dish never touches inventory\" - the optional in the requirement.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"menu_item\": \"<menu_item>\",\n  \"rows\": \"<rows>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "save_ingredient",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.save_ingredient",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.save_ingredient"
+       ]
+      },
+      "description": "Create or update one ingredient.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"ingredient_name\": \"<ingredient_name>\",\n  \"uom\": \"<uom>\",\n  \"cost_per_unit\": 0,\n  \"is_active\": 1\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "delete_ingredient",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.delete_ingredient",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.delete_ingredient"
+       ]
+      },
+      "description": "Refuse if it is on a recipe or has history - deleting it would orphan a\nrecipe or punch a hole in the ledger. Deactivate instead.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"name\": \"<name>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "receive_stock",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.receive_stock",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.receive_stock"
+       ]
+      },
+      "description": "Goods in. rows = [{ingredient, qty, cost_per_unit?}]. One batch_id ties\nthe delivery together, which is why this needs no Stock Receipt doctype:\na receipt is just its ledger rows plus a supplier and an invoice number.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\",\n  \"rows\": \"<rows>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "adjust_stock",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.adjust_stock",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.adjust_stock"
+       ]
+      },
+      "description": "The stock take, and the escape hatch for everything this module cannot\nknow. rows = [{ingredient, counted_qty}] - COUNTS, not deltas, exactly\nlike laundry's return_items: a human reports what is physically on the\nshelf and the system works out its own error.\n\nThe note is required on purpose. A write-off with no reason is precisely\nthe silence this module exists to remove - the same call laundry's\nshortage guard makes when it refuses to deliver a short bag unexplained.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\",\n  \"rows\": \"<rows>\",\n  \"note\": \"<note>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "record_wastage",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.record_wastage",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.record_wastage"
+       ]
+      },
+      "description": "Stock destroyed OUTSIDE a sale: a crate of tomatoes rots, a bottle\nbreaks. No POS line exists, so only a real ledger row can say it happened.\n\nNote what this is NOT for: food that was cooked and then voided. That\nalready left the shelf at fire and already has its Consumed row - writing\na Wastage row too would deduct it twice. Use wastage_report() for those.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\",\n  \"ingredient\": \"<ingredient>\",\n  \"qty\": \"<qty>\",\n  \"reason_note\": \"<reason_note>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "stock_list",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.stock_list",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.stock_list"
+       ]
+      },
+      "description": "Everything this outlet holds. Stock is per outlet, so there is no such\nthing as a merged total across outlets and this never offers one.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "ingredient_ledger",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.ingredient_ledger",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.ingredient_ledger"
+       ]
+      },
+      "description": "Where did my paneer go? Newest first, each row carrying the balance it\nproduced, so the history explains the number on the shelf.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\",\n  \"ingredient\": \"<ingredient>\",\n  \"limit\": 50\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "low_stock",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.low_stock",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.low_stock"
+       ]
+      },
+      "description": "Everything at or under par, out, or negative - and, for each, the\ndishes that use it. That last part is what makes the flag actionable:\n\"Paneer is out\" means nothing until you know it takes Paneer Tikka with\nit. We flag and offer; a human decides. Nothing is ever auto-86'd.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "wastage_report",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.wastage_report",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.wastage_report"
+       ]
+      },
+      "description": "Food that was cooked and then binned: lines voided after they fired.\n\nDerived, deliberately. The stock already left at the fire and the Consumed\nrow is the truth - a second Wastage row would deduct it twice, and a\ncompensating pair would churn the ledger without changing a balance. This\nonly asks which of those consumptions turned out to be waste, and what\nthey cost. reason=\"Wastage\" in the ledger stays reserved for stock\ndestroyed outside a sale, so SUM(qty_change) always equals reality.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\",\n  \"days\": 30\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "set_menu_availability",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.set_menu_availability",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.set_menu_availability"
+       ]
+      },
+      "description": "86 a dish, or put it back. This is the ONLY thing that ever pulls an\nitem off the menu for stock reasons, and a human has to press it.\n\nNothing auto-86s on a zero balance, deliberately: the count is the least\ntrustworthy number in the building (see this module's docstring), and a\nstale one would silently hide a dish the kitchen can actually cook. The\nscreen flags what is out and offers the button; the decision stays with\nsomeone who can walk over and look at the shelf.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"menu_item\": \"<menu_item>\",\n  \"available\": \"<available>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "set_par_level",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.inventory.set_par_level",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.inventory.set_par_level"
+       ]
+      },
+      "description": "Where LOW starts for this ingredient at this outlet. Zero = no par.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"outlet\": \"Your Property-Restaurant\",\n  \"ingredient\": \"<ingredient>\",\n  \"par_level\": \"<par_level>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "Menu bulk import",
+   "item": [
+    {
+     "name": "preview_menu_import",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.menu_import.preview_menu_import",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.menu_import.preview_menu_import"
+       ]
+      },
+      "description": "Dry run: how the columns map, what would be created vs updated, and\nevery row that would be skipped. Nothing is written.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"csv_text\": \"<csv_text>\",\n  \"outlet\": \"Your Property-Restaurant\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "run_menu_import",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.menu_import.run_menu_import",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.menu_import.run_menu_import"
+       ]
+      },
+      "description": "Import the file. Upserts by (property, outlet, item_name): a dish\nalready on that outlet's menu is updated (price/flags), never duplicated.\nOne bad row never aborts the batch.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"property\": \"Your Property\",\n  \"csv_text\": \"<csv_text>\",\n  \"outlet\": \"Your Property-Restaurant\",\n  \"update_existing\": 1\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "menu_template",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       },
+       {
+        "key": "Authorization",
+        "value": "token {{api_key}}:{{api_secret}}"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.menu_import.menu_template",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.menu_import.menu_template"
+       ]
+      },
+      "description": "The CSV headers + one sample row, so the file starts out right."
+     }
+    }
+   ]
+  },
+  {
+   "name": "Guest ID documents",
+   "item": []
   },
   {
    "name": "Central reservations (chain)",
@@ -5308,6 +6312,39 @@
       "body": {
        "mode": "raw",
        "raw": "{\n  \"token\": \"<token>\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "precheckin_upload_id",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/method/kamra.public_api.precheckin_upload_id",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "method",
+        "kamra.public_api.precheckin_upload_id"
+       ]
+      },
+      "description": "The guest photographs their ID during pre-arrival check-in.\n\nDeliberately NOT Frappe's upload_file. That endpoint would need the\nsite-wide `allow_guests_to_upload_files` setting, which opens\nunauthenticated upload to the whole site; on its guest branch it sets\nignore_permissions and never sees a token, so it cannot tell whether this\nguest owns this booking; and it takes is_private from the client - i.e.\nit trusts the browser to protect an Aadhaar scan. Here the token is the\ngate, the rate limit is real, and privacy is not negotiable.\n\nOptional by design: nothing downstream requires a document. A guest with\na cracked camera or a bad lobby connection must still be able to\npre-register, so the submit gate never mentions this.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"token\": \"<token>\",\n  \"data\": \"<data>\"\n}",
        "options": {
         "raw": {
          "language": "json"

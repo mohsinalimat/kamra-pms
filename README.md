@@ -57,6 +57,8 @@ Hotels deserve better than:
 | **Folio & GST invoice** — per-line GST, splits/transfers, payment links, multi-rate breakup | **Booking Engine console** — manage your direct-booking page: hotel profile, photo gallery, policies, FAQ, map & directions, and SEO |
 | ![Restaurant POS with the table map](docs/screenshots/pos.png) | ![Property dashboard](docs/screenshots/dashboard.png) |
 | **Restaurant POS** — area-wise table map with live states (running / in kitchen / reserved / cleaning), concurrent bills, thermal KOT & bill printing, F-key shortcuts | **Dashboard** — occupancy, movement, revenue and collections with department slices, chain-wide roll-up |
+| ![Laundry console](docs/screenshots/laundry.png) | ![Self check-in with ID capture](docs/screenshots/checkin-id.png) |
+| **Laundry console** — pickup queue, ready-by tracking, printable dockets, guest self-service requests | **Self check-in** — guests fill details, photograph their ID with the phone camera and sign; stored privately, discarded per retention policy |
 
 **The direct booking page your guests see** — photo gallery, live per-date rates, hotel policies, an FAQ, map & directions, and pay-at-hotel — commission-free, and yours to brand.
 
@@ -71,10 +73,10 @@ Hotels deserve better than:
 | Booking | **Multi-room bookings in one flow**, group & corporate bookings, booked-on-behalf (booker vs guest), returning-guest typeahead, **add-ons at booking**, sell messages, travel agents with commissions, day-use |
 | Revenue | Occupancy-based pricing, seasons, rate plans, vouchers, meal plans, **rate guardrails**, **hurdle rates** (demand tiers apply premiums and a dynamic floor automatically), a controlled **overbooking allowance** enforced in code, cancellation/no-show/deposit **policies enforced in code**, owner & **GM position briefings** via API/copilot |
 | Billing | Folios with per-line GST (₹7,500 slab auto-switch), **corporate billing rules** (charge routing, alcohol always to guest), **group master folios**, %/₹ **charge splits** with exact conservation, bulk transfers, automated night audit that also charges no-shows, GST invoices with B2B GSTIN, GSTR-1 export, cashier reconciliation, payment links via frappe/payments |
-| F&B | Restaurant POS with an **area-wise table map** (seats, live states, **table reservations**, cleaning), concurrent & **split bills**, dine-in / room service / takeaway / **delivery**, **80mm thermal KOT and bill printing** with daily KOT numbers, **NC (complimentary) bills** with authorizer, live **kitchen display** per outlet, guest **QR ordering** with captain confirmation, cash/card/UPI settle or room posting (alcohol-aware), voids & cancellations with reasons |
+| F&B | Restaurant POS with an **area-wise table map** (seats, live states, **table reservations**, cleaning), concurrent & **split bills**, dine-in / room service / takeaway / **delivery**, **80mm thermal KOT and bill printing** with daily KOT numbers, **NC (complimentary) bills** with authorizer, **kitchen display v2** (accept/start, recall, sound, station & course grouping, allergy highlighting, timeline), **inventory & recipes** with stock ledger and per-dish consumption, **menu bulk import**, guest **QR ordering** with captain confirmation, cash/card/UPI settle or room posting (alcohol-aware), voids & cancellations with reasons |
 | Operations | Service tickets with SLA, housekeeping **mobile app** (`/hk`), **guest laundry end to end** (rate card → counted pickup → piece-by-piece return → folio billing, with a desk console, **guest self-service pickup requests** from the in-stay page, promised ready-by times with overdue tracking, printable laundry dockets, **house/complimentary orders** that never bill, and a revenue panel), lost & found, shift handover, venues & events |
 | Guests | Self check-in links, printable **GRC with the legal occupant register**, ID retention modes (store / verify-and-discard), experiences showcase |
-| Platform | Multi-property with per-user scoping, six-role RBAC, settings hub, **dark mode**, onboarding wizard + **CSV migration importers** (eZee / Cloudbeds presets with dry-run preview), savings ledger, **33-check eval harness + 13-journey front-desk persona suite in CI** |
+| Platform | Multi-property with per-user scoping, six-role RBAC, settings hub, **dark mode**, onboarding wizard + **CSV migration importers** (eZee / Cloudbeds presets with dry-run preview), savings ledger, **43-check eval harness + 13-journey front-desk persona suite in CI** |
 
 ## Documentation
 
@@ -84,7 +86,7 @@ AI/MCP setup and FAQ.
 
 ### REST API
 
-Kamra exposes **148 REST endpoints** — the same governed layer the UI and
+Kamra exposes **178 REST endpoints** — the same governed layer the UI and
 the AI use:
 
 - **[REST API reference](https://kamrapms.com/docs/api-reference)** —
@@ -177,7 +179,8 @@ AGPL-3.0 — free forever. Anyone offering Kamra as a hosted service must share 
 
 Kamra is built in the open — [PRs welcome](CONTRIBUTING.md). Thanks to
 [@Mohammed-Muneef](https://github.com/Mohammed-Muneef) (guest laundry
-self-service, the desk laundry console, house & complimentary orders).
+self-service and the desk laundry console, kitchen display v2, inventory
+& recipes, menu bulk import, hardened ID-document handling).
 
 ## Links & contact
 

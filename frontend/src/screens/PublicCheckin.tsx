@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom"
 import { call } from "../lib/api"
 import { Button } from "../components/ui/button"
 import { SignaturePad } from "../components/SignaturePad"
+import { IdDocumentField } from "../components/IdDocumentField"
 import { GuestLaundryCard } from "./laundry/GuestLaundryCard"
 
 
@@ -28,6 +29,57 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
+function DocCapture(props: {
+  title: string
+  note: string
+  value: string
+  onChange: (v: string) => void
+  onFile: (f: File) => Promise<string>
+  hasExisting?: boolean
+}) {
+  const { title, note, value, onChange, onFile, hasExisting } = props
+  return (
+    <div className="rounded-xl border border-zinc-200 p-3">
+      <span className="block text-sm font-medium text-zinc-600">{title}</span>
+      <p className="mb-2 mt-0.5 text-xs text-zinc-400">{note}</p>
+      {hasExisting && !value && (
+        <p className="mb-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-800">
+          ✓ We already have this from your last visit — we'll use it.
+          Add a photo below only to replace it with a newer one.
+        </p>
+      )}
+      {value ? (
+        <div className="flex items-center gap-3">
+          <img src={value} alt={title} className="h-20 rounded-lg border border-zinc-200 object-cover" />
+          <button type="button" className="text-sm font-medium text-rose-600 hover:underline"
+            onClick={() => onChange("")}>
+            Remove & retake
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <label className="cursor-pointer rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">
+            Take photo
+            <input type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                if (f) onChange(await onFile(f))
+              }} />
+          </label>
+          <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700">
+            Upload image
+            <input type="file" accept="image/*" className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                if (f) onChange(await onFile(f))
+              }} />
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-base " +
   "focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
@@ -43,7 +95,7 @@ interface Info {
     pets_policy: string | null
     children_policy: string | null
     extra_bed_policy: string | null
-    id_retention?: string | null
+    id_retention: string
   }
   stay: {
     reservation: string
@@ -61,7 +113,10 @@ interface Info {
     email: string | null
     id_type: string | null
     has_id_file?: boolean
+    has_address_file?: boolean
     nationality: string | null
+    has_id_document: boolean
+    id_document_on: string
   }
 }
 
@@ -78,8 +133,9 @@ export default function PublicCheckin() {
     address_line: "", city: "", eta: "", special_requests: "",
   })
   const [signature, setSignature] = useState("")
-  const [idImage, setIdImage] = useState("") // data-URL of the ID photo
+  const [addrImage, setAddrImage] = useState("") // data-URL of the address proof
   const [consent, setConsent] = useState(false)
+  const [idUploaded, setIdUploaded] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -92,6 +148,10 @@ export default function PublicCheckin() {
           id_type: i.guest.id_type || "Aadhaar",
           nationality: i.guest.nationality ?? "Indian",
         }))
+        // a boolean, never a URL - the guest can't be shown their own photo
+        // back (Frappe refuses a Guest session any private file), so after a
+        // reload this is all we can honestly say
+        setIdUploaded(i.guest.has_id_document)
         if (i.stay.status === "Submitted") setDone(true)
       })
       .catch(() => setError("This check-in link isn't valid. Please contact the hotel."))
@@ -103,7 +163,7 @@ export default function PublicCheckin() {
     try {
       await call("kamra.public_api.precheckin_submit", {
         token, ...form, signature, consent: consent ? 1 : 0,
-        id_image: idImage || "",
+        address_image: addrImage || "",
       })
       setDone(true)
     } catch {
@@ -196,50 +256,34 @@ export default function PublicCheckin() {
               </label>
             </div>
 
-            {/* photo of the ID: camera on phones, file picker anywhere */}
-            <div className="rounded-xl border border-zinc-200 p-3">
-              <span className="block text-sm font-medium text-zinc-600">
-                Photo of your {form.id_type || "ID"}
-              </span>
-              <p className="mb-2 mt-0.5 text-xs text-zinc-400">
-                Stored privately, shown only to the front desk
-                {info?.property?.id_retention === "Verify & Discard"
-                  ? " — and deleted after checkout." : "."}
-              </p>
-              {idImage ? (
-                <div className="flex items-center gap-3">
-                  <img src={idImage} alt="Your ID" className="h-20 rounded-lg border border-zinc-200 object-cover" />
-                  <button type="button" className="text-sm font-medium text-rose-600 hover:underline"
-                    onClick={() => setIdImage("")}>
-                    Remove & retake
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  <label className="cursor-pointer rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">
-                    Take photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0]
-                        if (f) setIdImage(await fileToDataUrl(f))
-                      }} />
-                  </label>
-                  <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700">
-                    Upload image
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0]
-                        if (f) setIdImage(await fileToDataUrl(f))
-                      }} />
-                  </label>
-                  {info?.guest?.has_id_file && (
-                    <span className="self-center text-xs font-medium text-emerald-700">
-                      ✓ Already on file — add a new one only to replace it
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Optional, and it stays optional: the submit button below never
+                mentions this. A guest on a locked-down phone or a bad lobby
+                connection must still be able to pre-register - gating here
+                would just move the queue back to the desk. */}
+            <IdDocumentField
+              method="kamra.public_api.precheckin_upload_id"
+              params={{ token }}
+              uploaded={idUploaded}
+              onUploaded={() => setIdUploaded(true)}
+              label="Add a photo of your ID (optional)"
+              hint="It speeds up arrival. Bring the original card either way."
+            />
+            <p className="-mt-1 text-xs text-zinc-500">
+              {p.id_retention === "Verify & Discard"
+                ? "Your ID photo is used only to confirm your identity at arrival, and is permanently deleted when you check out. Only hotel staff can see it."
+                : "Your ID photo is kept with the guest register the hotel is required by law to maintain. Only hotel staff can see it."}
+              {form.id_type === "Aadhaar" && " A masked Aadhaar (last 4 digits showing) is fine."}
+            </p>
+
+            <DocCapture
+              title="Address proof (optional)"
+              note="Only if your address proof is a different document from your ID."
+              value={addrImage}
+              onChange={setAddrImage}
+              onFile={fileToDataUrl}
+              hasExisting={info?.guest?.has_address_file}
+            />
+
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-zinc-600">Email</span>
@@ -316,9 +360,14 @@ export default function PublicCheckin() {
               <span className="mb-1.5 block text-sm font-medium text-zinc-600">
                 Registration card - your signature
               </span>
+              {/* One instrument, widened - not a second checkbox. The notice
+                  has to cover the ID photo before it's collected, but adding
+                  another gate to the form whose completion rate is the whole
+                  point would cost more than it protects. */}
               <p className="mb-2 text-xs text-zinc-500">
-                I confirm the details above are correct and agree to the hotel's
-                registration terms and house rules.
+                I confirm the details above are correct, agree to the hotel's
+                registration terms and house rules, and consent to the hotel
+                holding a copy of my ID for this stay.
               </p>
               <SignaturePad onChange={setSignature} />
               <label className="mt-2 flex items-start gap-2 text-xs text-zinc-600">

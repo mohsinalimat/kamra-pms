@@ -53,6 +53,20 @@ def setup():
 			"user_type": "System User", "send_welcome_email": 0,
 			"roles": [{"role": "Kamra Agent"}],
 		}).insert(ignore_permissions=True)
+	# the persona users the role-gate checks act as. seed_users.py is a demo
+	# script CI never runs, so relying on it left these users absent: set_user
+	# to a missing user yields no roles, which turns every "role X may not do
+	# Y" check into a pass for the wrong reason.
+	for email, first, role in (
+		("frontdesk@kamra.local", "Ravi", "Front Desk"),
+		("hk@kamra.local", "Lakshmi", "Housekeeping"),
+	):
+		if not frappe.db.exists("User", email):
+			frappe.get_doc({
+				"doctype": "User", "email": email, "first_name": first,
+				"enabled": 1, "user_type": "System User",
+				"send_welcome_email": 0, "roles": [{"role": role}],
+			}).insert(ignore_permissions=True)
 	if not frappe.db.exists("Property", P):
 		frappe.get_doc({
 			"doctype": "Property", "property_name": P, "city": "Testville",
@@ -1178,6 +1192,564 @@ def t33():
 	assert second.room_type == rt and second.status == "Cancelled", second
 
 
+@check("kitchen display: chef context, post-fire void alert, recall undo")
+def t38():
+	from kamra import pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Kitchen",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	def _mi(name, station, veg, course="Main", allergens=None):
+		return frappe.get_doc({
+			"doctype": "Menu Item", "property": P, "outlet": outlet,
+			"item_name": name, "category": "Food", "price": 100,
+			"is_veg": veg, "available": 1, "prep_station": station,
+			"course": course, "allergens": allergens,
+		}).insert(ignore_permissions=True).name
+	food = _mi("Eval Paneer", "Kitchen", 1)
+	drink = _mi("Eval Lager", "Bar", 0)
+
+	o = pos.create_order(outlet, [{"menu_item": food, "qty": 2, "instructions": "no onions"},
+	                              {"menu_item": drink, "qty": 1}],
+	                     table_no="T9", guests=3)
+	# not fired yet: the kitchen must not see it
+	assert not [r for r in pos.kitchen_queue(P, outlet=outlet)], "unfired order on the board"
+	pos.fire_kot(o["order"])
+
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	# the chef's context: ticket number, where it goes, who to ask
+	assert tick["kot_no"] >= 1 and tick["order_type"] == "Dine In", tick
+	assert tick["guests"] == 3 and tick["captain"], tick
+	paneer = next(i for i in tick["items"] if i["item_name"] == "Eval Paneer")
+	assert paneer["is_veg"] == 1 and paneer["state"] == "cooking", paneer
+	assert paneer["instructions"] == "no onions", paneer
+	# station routing splits food from drink
+	assert [i["item_name"] for i in next(
+		r for r in pos.kitchen_queue(P, outlet=outlet, station="Bar")
+		if r["name"] == o["order"])["items"]] == ["Eval Lager"]
+
+	# a line voided AFTER firing must shout, not vanish: the chef is cooking it
+	rows = {i["item_name"]: i["row"] for i in pos.order_detail(o["order"])["items"]}
+	pos.void_item(o["order"], rows["Eval Lager"], reason="guest changed mind")
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	lager = next(i for i in tick["items"] if i["item_name"] == "Eval Lager")
+	assert lager["state"] == "cancelled", lager
+	assert lager["void_reason"] == "guest changed mind", lager
+
+	# "all ready" must never mark cancelled food as cooked
+	assert pos.mark_prepared(o["order"])["all_prepared"], "void blocked all_prepared"
+	assert frappe.db.get_value("POS Order Item", rows["Eval Lager"], "kot_status") == "Fired"
+	# the ack clears the alert, and with it the ticket
+	pos.acknowledge_void(o["order"], rows["Eval Lager"])
+	assert not [r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"]]
+
+	# a mis-tap is recoverable: recall puts the ticket back on the board
+	pos.recall_prepared(o["order"])
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	assert [i["state"] for i in tick["items"]] == ["cooking"], tick
+	pos.mark_prepared(o["order"])
+	pos.deliver_order(o["order"])
+	# once it has left the kitchen there is nothing to recall
+	try:
+		pos.recall_prepared(o["order"])
+		raise AssertionError("recall allowed after delivery")
+	except frappe.ValidationError:
+		pass
+
+
+@check("kitchen display: coursing holds & fires, cook's clock starts at fire, allergen alarm")
+def t39():
+	from kamra import pos
+	from frappe.utils import add_to_date, now_datetime
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Eval Pass",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	def _mi(name, course, station, allergens=None):
+		return frappe.get_doc({
+			"doctype": "Menu Item", "property": P, "outlet": outlet,
+			"item_name": name, "category": "Food", "price": 100, "is_veg": 1,
+			"available": 1, "prep_station": station, "course": course,
+			"allergens": allergens,
+		}).insert(ignore_permissions=True).name
+	tikka = _mi("Pass Tikka", "Starter", "Tandoor")
+	curry = _mi("Pass Curry", "Main", "Tandoor", "Nuts, Dairy")
+	lager = _mi("Pass Lager", "Drink", "Bar")
+
+	o = pos.create_order(outlet, [{"menu_item": tikka, "qty": 2},
+	                              {"menu_item": curry, "qty": 1},
+	                              {"menu_item": lager, "qty": 1}],
+	                     table_no="C2", guests=2,
+	                     allergy_note="nut allergy - child at the table")
+
+	# coursing: only the starter goes; the rest is held where the chef can see it
+	pos.fire_kot(o["order"], course="Starter")
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	state = {i["item_name"]: i["state"] for i in tick["items"]}
+	assert state == {"Pass Tikka": "cooking", "Pass Curry": "held",
+	                 "Pass Lager": "held"}, state
+	assert tick["held_courses"] == ["Main", "Drink"], tick["held_courses"]
+
+	# the allergen alarm fires on the dish that contains it, and only that one
+	curry_line = next(i for i in tick["items"] if i["item_name"] == "Pass Curry")
+	assert curry_line["allergy_hits"] == ["Nuts"], curry_line["allergy_hits"]
+	assert not next(i for i in tick["items"] if i["item_name"] == "Pass Tikka")["allergy_hits"]
+	assert tick["allergy_note"], "guest's own words must ride along with the match"
+
+	# THE COOK'S CLOCK: a tab opened an hour ago must not hand the kitchen a
+	# ticket that is already late. Age runs from the fire, not the order.
+	frappe.db.set_value("POS Order", o["order"], "creation",
+	                    add_to_date(now_datetime(), hours=-1), update_modified=False)
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	fired = next(i for i in tick["items"] if i["state"] == "cooking")["fired_at"]
+	assert (now_datetime() - fired).total_seconds() < 120, "cook's clock inherited the tab's age"
+
+	# each course keeps its own clock
+	pos.mark_prepared(o["order"])
+	frappe.db.set_value("POS Order Item", next(
+		i["name"] for i in tick["items"] if i["item_name"] == "Pass Tikka"),
+		"fired_at", add_to_date(now_datetime(), minutes=-30), update_modified=False)
+	pos.fire_kot(o["order"], course="Main")
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	main = next(i for i in tick["items"] if i["item_name"] == "Pass Curry")
+	assert main["state"] == "cooking" and main["fired_at"], main
+	assert (now_datetime() - main["fired_at"]).total_seconds() < 120, \
+		"mains inherited the starter's clock"
+	assert tick["held_courses"] == ["Drink"], tick["held_courses"]
+
+	# a course already sent cannot be fired twice
+	try:
+		pos.fire_kot(o["order"], course="Main")
+		raise AssertionError("re-fired a course that was already away")
+	except frappe.ValidationError:
+		pass
+
+	# the floor can tell whether anyone has actually picked the ticket up
+	assert not tick["accepted_at"], "ticket accepted before the kitchen touched it"
+	assert tick["order_total"], "ticket carries no order value"
+	pos.accept_ticket(o["order"])
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	first_accept = tick["accepted_at"]
+	assert first_accept, "accept did not stick"
+	pos.accept_ticket(o["order"])  # accepting twice must not reset the clock
+	tick = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o["order"])
+	assert tick["accepted_at"] == first_accept, "re-accept moved the timestamp"
+
+	# station routing follows the course to its section
+	bar = next(r for r in pos.kitchen_queue(P, outlet=outlet, station="Bar")
+	           if r["name"] == o["order"])
+	assert [i["item_name"] for i in bar["items"]] == ["Pass Lager"], bar["items"]
+	assert bar["held_courses"] == ["Drink"], bar["held_courses"]
+
+	# a menu written before coursing existed still fires with everything else
+	legacy = _mi("Pass Legacy", "Main", "Kitchen")
+	frappe.db.set_value("Menu Item", legacy, "course", None)
+	o2 = pos.create_order(outlet, [{"menu_item": legacy, "qty": 1}], table_no="C9")
+	pos.fire_kot(o2["order"], course="Main")
+	t2 = next(r for r in pos.kitchen_queue(P, outlet=outlet) if r["name"] == o2["order"])
+	assert t2["items"][0]["state"] == "cooking", "legacy line was held back forever"
+	assert t2["items"][0]["course"] == "Main", t2["items"][0]["course"]
+
+
+@check("kitchen stock: fire deducts per outlet, shortage never blocks, ledger reconciles")
+def t40():
+	from kamra import inventory, pos
+	kitchen = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Stock Kitchen",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	bar = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Stock Bar",
+		"outlet_type": "Bar", "gst_rate": 18,
+	}).insert(ignore_permissions=True).name
+
+	def _ing(name, uom, cost):
+		return frappe.get_doc({
+			"doctype": "Ingredient", "property": P, "ingredient_name": name,
+			"uom": uom, "cost_per_unit": cost, "is_active": 1,
+		}).insert(ignore_permissions=True).name
+	paneer = _ing("Stock Paneer", "kg", 400)
+	chicken = _ing("Stock Chicken", "kg", 320)
+
+	def _dish(name, outlet, course, recipe):
+		return frappe.get_doc({
+			"doctype": "Menu Item", "property": P, "outlet": outlet,
+			"item_name": name, "category": "Food", "price": 300, "is_veg": 1,
+			"available": 1, "prep_station": "Kitchen", "course": course,
+			"recipe": [{"ingredient": i, "qty": q} for i, q in recipe],
+		}).insert(ignore_permissions=True).name
+	tikka = _dish("Stock Tikka", kitchen, "Starter", [(paneer, 0.2)])
+	curry = _dish("Stock Curry", kitchen, "Main", [(chicken, 0.25)])
+	water = _dish("Stock Water", kitchen, "Drink", [])  # no recipe, on purpose
+
+	def _bal(outlet, ing):
+		return frappe.db.get_value("Ingredient Stock", f"{outlet}::{ing}", "qty_on_hand")
+
+	inventory.receive_stock(P, kitchen, [{"ingredient": paneer, "qty": 1.0}],
+	                        supplier="Eval Farm")
+	assert _bal(kitchen, paneer) == 1.0, _bal(kitchen, paneer)
+	assert frappe.db.exists("Stock Ledger Entry",
+	                        {"ingredient": paneer, "reason": "Received",
+	                         "balance_after": 1.0}), "receipt left no ledger row"
+
+	# firing is what moves stock - the chef starting to cook, not the bill
+	o = pos.create_order(kitchen, [{"menu_item": tikka, "qty": 2}], table_no="S1")
+	assert _bal(kitchen, paneer) == 1.0, "stock moved before the KOT fired"
+	pos.fire_kot(o["order"])
+	assert abs(_bal(kitchen, paneer) - 0.6) < 1e-9, _bal(kitchen, paneer)
+
+	# stock is per outlet: the bar's paneer is not the kitchen's paneer
+	assert _bal(bar, paneer) is None, "firing at one outlet touched another"
+
+	# nothing but a fire moves stock: prepare/recall/prepare must be inert
+	before = _bal(kitchen, paneer)
+	pos.mark_prepared(o["order"])
+	pos.recall_prepared(o["order"])
+	pos.mark_prepared(o["order"])
+	assert _bal(kitchen, paneer) == before, "a non-fire transition moved stock"
+
+	# A SHORT COUNT MUST NEVER STOP SERVICE. The chef has the paneer in hand;
+	# it is the number that is wrong. Fire, go negative, say so loudly.
+	o2 = pos.create_order(kitchen, [{"menu_item": tikka, "qty": 10}], table_no="S2")
+	r2 = pos.fire_kot(o2["order"])
+	assert r2["ok"] and frappe.db.get_value("POS Order", o2["order"], "status") == "Preparing", r2
+	assert all(i.kot_status == "Fired"
+	           for i in frappe.get_doc("POS Order", o2["order"]).items), "a short count blocked the KOT"
+	assert _bal(kitchen, paneer) < 0, _bal(kitchen, paneer)
+	assert any(a["level"] == "negative" for a in r2["stock_alerts"]), r2["stock_alerts"]
+
+	# coursing: a held course is still on the shelf and must not be deducted
+	o3 = pos.create_order(kitchen, [{"menu_item": tikka, "qty": 1},
+	                                {"menu_item": curry, "qty": 1}], table_no="S3")
+	inventory.receive_stock(P, kitchen, [{"ingredient": chicken, "qty": 5.0}])
+	pos.fire_kot(o3["order"], course="Starter")
+	assert _bal(kitchen, chicken) == 5.0, "firing the starter consumed the main"
+	pos.fire_kot(o3["order"], course="Main")
+	assert abs(_bal(kitchen, chicken) - 4.75) < 1e-9, _bal(kitchen, chicken)
+	# and the starter is not deducted a second time by the main's fire
+	starter_moves = frappe.db.count(
+		"Stock Ledger Entry",
+		{"ingredient": paneer, "reference_name": o3["order"], "reason": "Consumed"})
+	assert starter_moves == 1, f"starter deducted {starter_moves} times"
+
+	# the optional in "optional recipe": no recipe, no ledger, no noise
+	rows_before = frappe.db.count("Stock Ledger Entry")
+	o4 = pos.create_order(kitchen, [{"menu_item": water, "qty": 3}], table_no="S4")
+	r4 = pos.fire_kot(o4["order"])
+	assert frappe.db.count("Stock Ledger Entry") == rows_before, "a recipe-less dish moved stock"
+	assert r4["stock_alerts"] == [], r4["stock_alerts"]
+
+	# the cache must never drift from the ledger - the one invariant that
+	# cannot bend, because every other number here is derived from it
+	for outlet, ing in ((kitchen, paneer), (kitchen, chicken)):
+		total = frappe.db.sql(
+			"""select sum(qty_change) from `tabStock Ledger Entry`
+			   where outlet=%s and ingredient=%s""", (outlet, ing))[0][0] or 0
+		assert abs(_bal(outlet, ing) - float(total)) < 1e-9, \
+			f"{ing} balance {_bal(outlet, ing)} != ledger {total}"
+
+
+@check("kitchen stock: post-fire void is wastage not a reversal, count is an explicit decision, no auto-86")
+def t41():
+	from kamra import inventory, pos
+	outlet = frappe.get_doc({
+		"doctype": "POS Outlet", "property": P, "outlet_name": "Waste Kitchen",
+		"outlet_type": "Restaurant", "gst_rate": 5,
+	}).insert(ignore_permissions=True).name
+	paneer = frappe.get_doc({
+		"doctype": "Ingredient", "property": P, "ingredient_name": "Waste Paneer",
+		"uom": "kg", "cost_per_unit": 400, "is_active": 1,
+	}).insert(ignore_permissions=True).name
+	tikka = frappe.get_doc({
+		"doctype": "Menu Item", "property": P, "outlet": outlet,
+		"item_name": "Waste Tikka", "category": "Food", "price": 300,
+		"is_veg": 1, "available": 1, "prep_station": "Tandoor", "course": "Starter",
+		"recipe": [{"ingredient": paneer, "qty": 0.2}],
+	}).insert(ignore_permissions=True).name
+
+	def _bal():
+		return frappe.db.get_value("Ingredient Stock", f"{outlet}::{paneer}", "qty_on_hand")
+
+	inventory.receive_stock(P, outlet, [{"ingredient": paneer, "qty": 5.0}])
+
+	# HEAT IS IRREVERSIBLE. A line voided after firing was cooked and binned:
+	# the paneer is gone whatever the bill says. Putting it back would be a
+	# lie that only surfaces at the next stock take.
+	o = pos.create_order(outlet, [{"menu_item": tikka, "qty": 2}], table_no="V1")
+	pos.fire_kot(o["order"])
+	after_fire = _bal()
+	row = pos.order_detail(o["order"])["items"][0]["row"]
+	pos.void_item(o["order"], row, reason="guest changed mind")
+	assert _bal() == after_fire, "a post-fire void reversed stock"
+	assert frappe.db.get_value("POS Order Item", row, "stock_posted") == 1
+	pos.acknowledge_void(o["order"], row)
+	assert _bal() == after_fire, "acknowledging a void moved stock"
+
+	# it surfaces as wastage instead - derived from the Consumed row that is
+	# already there, never a second ledger entry that would deduct twice
+	wr = inventory.wastage_report(P, outlet)
+	assert wr["total_value"] > 0, wr
+	assert wr["by_reason"][0]["reason"] == "guest changed mind", wr["by_reason"]
+
+	# spoilage is the opposite case: no POS line exists, so only a real
+	# Wastage row can say the stock left
+	before = _bal()
+	inventory.record_wastage(P, outlet, paneer, 0.5, "crate spoiled")
+	assert abs(_bal() - (before - 0.5)) < 1e-9, _bal()
+	assert frappe.db.exists("Stock Ledger Entry",
+	                        {"ingredient": paneer, "reason": "Wastage"})
+
+	# a cancelled order does not un-cook what was already fired
+	o2 = pos.create_order(outlet, [{"menu_item": tikka, "qty": 1}], table_no="V2")
+	pos.fire_kot(o2["order"])
+	held = _bal()
+	pos.cancel_order(o2["order"], reason="table walked")
+	assert _bal() == held, "cancelling an order reversed cooked food"
+
+	# a split moves food that is already cooked and already deducted; the
+	# copied stock_posted flag is what stops the new bill deducting again
+	o3 = pos.create_order(outlet, [{"menu_item": tikka, "qty": 1},
+	                               {"menu_item": tikka, "qty": 1}], table_no="V3")
+	pos.fire_kot(o3["order"])
+	pre_split = _bal()
+	rows = [i["row"] for i in pos.order_detail(o3["order"])["items"]]
+	split = pos.split_order(o3["order"], [rows[0]], table_no="V4")
+	assert _bal() == pre_split, "splitting a bill deducted the food twice"
+	new_rows = pos.order_detail(split["new_order"])["items"]
+	assert all(frappe.db.get_value("POS Order Item", i["row"], "stock_posted") == 1
+	           for i in new_rows), "split lines lost their stock_posted flag"
+
+	# THE ESCAPE HATCH: a count is how a human corrects everything the system
+	# cannot know. It demands a note - a write-off without a reason is exactly
+	# the silence this module exists to remove.
+	try:
+		inventory.adjust_stock(P, outlet, [{"ingredient": paneer, "counted_qty": 3}],
+		                       note="   ")
+		raise AssertionError("a stock take was accepted with no note")
+	except frappe.ValidationError:
+		pass
+	res = inventory.adjust_stock(P, outlet, [{"ingredient": paneer, "counted_qty": 3.0}],
+	                             note="recount after delivery")
+	assert _bal() == 3.0, _bal()
+	assert res["adjusted"][0]["variance"], res
+	assert frappe.db.exists("Stock Ledger Entry",
+	                        {"ingredient": paneer, "reason": "Count"})
+	assert frappe.db.get_value("Ingredient Stock", f"{outlet}::{paneer}",
+	                           "last_counted_at"), "a count left no counted-at stamp"
+
+	# NOTHING AUTO-86s. The count is the least trustworthy number in the
+	# building; a stale one must never silently hide a dish the kitchen can
+	# actually cook. Flag it, name the dishes it threatens, let a human decide.
+	o5 = pos.create_order(outlet, [{"menu_item": tikka, "qty": 30}], table_no="V5")
+	pos.fire_kot(o5["order"])
+	assert _bal() < 0, _bal()
+	assert frappe.db.get_value("Menu Item", tikka, "available") == 1, \
+		"an ingredient hitting zero auto-86'd a dish"
+	low = [r for r in inventory.low_stock(P, outlet) if r["ingredient"] == paneer]
+	assert low and low[0]["status"] == "NEGATIVE", low
+	assert any(d["name"] == tikka for d in low[0]["dishes"]), \
+		"the flag does not name the dish it takes down"
+	# and the 86 itself is a deliberate human act
+	inventory.set_menu_availability(tikka, 0)
+	assert frappe.db.get_value("Menu Item", tikka, "available") == 0
+
+	# looking is not moving: Front Desk reads stock, Finance moves it
+	me = frappe.session.user
+	try:
+		frappe.set_user("frontdesk@kamra.local")
+		inventory.stock_list(P, outlet)  # allowed
+		try:
+			inventory.receive_stock(P, outlet, [{"ingredient": paneer, "qty": 1}])
+			raise AssertionError("Front Desk was allowed to receive stock")
+		except frappe.PermissionError:
+			pass
+	finally:
+		frappe.set_user(me)
+
+
+def _id_photo(colour=(180, 40, 40)):
+	"""A real PNG data URL, built in memory - no fixture file to go missing."""
+	import base64
+	import io
+
+	from PIL import Image
+	buf = io.BytesIO()
+	Image.new("RGB", (48, 30), colour).save(buf, format="PNG")
+	return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _id_files(reservation):
+	return frappe.get_all("File", filters={
+		"attached_to_doctype": "Reservation", "attached_to_name": reservation,
+		"attached_to_field": "id_document"}, pluck="name")
+
+
+@check("ID document: private storage, token gate, never blocks check-in, discarded at checkout")
+def t42():
+	import base64
+
+	from kamra import api, public_api as pub
+	g = _guest("ID Doc Guest", "+91 70000 00038")
+	res = _res(g, "2035-02-01", "2035-02-03", ROOM)
+	token = frappe.db.get_value("Reservation", res.name, "precheckin_token")
+	assert token and len(token) >= 20, "a booking minted no pre-check-in token"
+
+	# the guest uploads with nothing but the link they were sent
+	pub.precheckin_upload_id(token, _id_photo())
+	files = _id_files(res.name)
+	assert len(files) == 1, files
+	f = frappe.get_doc("File", files[0])
+	# THE assertion: an ID scan is never reachable without a session. Frappe's
+	# own upload_file would have taken is_private from the client.
+	assert f.is_private == 1, "the ID scan is world-readable"
+	assert f.file_url.startswith("/private/files/"), f.file_url
+	assert f.owner == pub.GUEST_AGENT, f.owner
+	assert frappe.db.get_value("Reservation", res.name, "id_document") == f.file_url
+	assert frappe.db.get_value("Reservation", res.name, "id_document_source") == "Guest"
+
+	# the guest page is told a boolean, never a path - a read-back would only
+	# be a brute-force oracle for the token
+	info = pub.precheckin_info(token)
+	assert info["guest"]["has_id_document"] is True, info["guest"]
+	assert not any("private/files" in str(v) for v in info["guest"].values()), info["guest"]
+
+	# a bad link buys nothing
+	for bad in ("z" * 24, "short"):
+		try:
+			pub.precheckin_upload_id(bad, _id_photo())
+			raise AssertionError(f"upload accepted the token {bad!r}")
+		except frappe.ValidationError:
+			pass
+
+	# re-encoding is the boundary: a payload wearing a JPEG's name dies, and
+	# leaves nothing behind
+	before = len(_id_files(res.name))
+	try:
+		pub.precheckin_upload_id(token, "data:image/jpeg;base64," +
+		                         base64.b64encode(b"<?php system($_GET[0]); ?>").decode())
+		raise AssertionError("a PHP payload was stored as an ID")
+	except frappe.ValidationError:
+		pass
+	assert len(_id_files(res.name)) == before, "a rejected upload still wrote a File"
+	try:
+		pub.precheckin_upload_id(token, "data:image/png;base64," + ("A" * (6 * 1024 * 1024)))
+		raise AssertionError("an oversize photo was stored")
+	except frappe.ValidationError:
+		pass
+
+	# what we store is a JPEG we wrote, with the guest's home GPS stripped out
+	from PIL import Image as _Image
+	import io as _io
+	stored = _Image.open(_io.BytesIO(frappe.get_doc("File", _id_files(res.name)[0]).get_content()))
+	assert stored.format == "JPEG", stored.format
+	assert not (stored.getexif() or {}), "EXIF survived - GPS may ride on the scan"
+
+	# one scan per booking: replace, never append
+	old = _id_files(res.name)[0]
+	pub.precheckin_upload_id(token, _id_photo((20, 90, 20)))
+	assert len(_id_files(res.name)) == 1, "a second upload appended instead of replacing"
+	assert not frappe.db.exists("File", old), "the replaced file was left on disk"
+
+	# A MISSING DOCUMENT MUST NEVER BLOCK AN ARRIVAL. This is the regression
+	# test for that promise: it exists so a future `and bool(res.id_document)`
+	# in can_check_in goes red instead of stranding a guest at the counter.
+	frappe.db.set_value("Reservation", res.name, "id_document", None)
+	d = api.reservation_detail(res.name)
+	assert d["warnings"]["id_document_missing"] is True, d["warnings"]
+	assert d["actions"]["can_check_in"] is True, "a missing ID blocked check-in"
+	api.check_in(res.name, ROOM)
+	assert frappe.db.get_value("Reservation", res.name, "status") == "Checked In"
+	frappe.db.set_value("Reservation", res.name, "id_document",
+	                    frappe.db.get_value("File", _id_files(res.name)[0], "file_url"))
+
+	# Verify & Discard: the scan leaves with the guest. Masking the number
+	# while a photo of the same card sat on disk would make the setting a lie.
+	frappe.db.set_value("Property", P, "id_retention", "Verify & Discard")
+	try:
+		api.check_out(res.name)
+	finally:
+		frappe.db.set_value("Property", P, "id_retention", "Store")
+	assert _id_files(res.name) == [], "the ID scan survived a Verify & Discard checkout"
+	assert frappe.db.get_value("Reservation", res.name, "id_document") is None
+	assert frappe.db.get_value("Reservation", res.name, "id_document_discarded") == 1, \
+		"nothing records that the scan was discarded on purpose"
+	# the pre-existing number masking still works alongside it
+	assert str(frappe.db.get_value("Guest", g, "id_number") or "").startswith("•") \
+		or not frappe.db.get_value("Guest", g, "id_number")
+
+	# Store mode keeps both - the property chose to hold the register
+	g2 = _guest("ID Keep Guest", "+91 70000 00039")
+	res2 = _res(g2, "2035-03-01", "2035-03-03", ROOM)
+	tok2 = frappe.db.get_value("Reservation", res2.name, "precheckin_token")
+	pub.precheckin_upload_id(tok2, _id_photo())
+	api.check_in(res2.name, ROOM)
+	api.check_out(res2.name)
+	assert len(_id_files(res2.name)) == 1, "Store mode discarded the scan anyway"
+	for n in _id_files(res2.name):  # this one has no retention to clean it up
+		frappe.delete_doc("File", n, ignore_permissions=True, delete_permanently=True)
+
+
+@check("ID document: desk captures and verifies, roles gate the look")
+def t43():
+	from kamra import api, id_documents, public_api as pub
+	g = _guest("ID Verify Guest", "+91 70000 00040")
+	res = _res(g, "2035-04-01", "2035-04-03", ROOM)
+	token = frappe.db.get_value("Reservation", res.name, "precheckin_token")
+
+	# the desk captures at the counter for a guest who never uploaded
+	frappe.set_user("frontdesk@kamra.local")
+	try:
+		api.upload_id_document(res.name, _id_photo())
+		assert frappe.db.get_value("Reservation", res.name, "id_document_source") == "Desk"
+		f = frappe.get_doc("File", _id_files(res.name)[0])
+		assert f.is_private == 1, "the desk's capture is world-readable"
+
+		# the image is served through the role gate, not its private URL: this
+		# site's Custom DocPerm rows omit Front Desk, so Frappe's own File
+		# permission would deny the very people who must look at it
+		img = api.id_document_image(res.name)
+		assert img["data"].startswith("data:image/jpeg;base64,"), img["data"][:30]
+
+		# verify makes precheckin_status="Verified" real - no code path ever
+		# wrote that enum before
+		frappe.db.set_value("Reservation", res.name, "precheckin_status", "Submitted")
+		api.verify_precheckin(res.name)
+		assert frappe.db.get_value("Reservation", res.name, "precheckin_status") == "Verified"
+		assert frappe.db.get_value("Reservation", res.name,
+		                           "precheckin_verified_by") == "frontdesk@kamra.local"
+		assert frappe.db.get_value("Reservation", res.name, "precheckin_verified_on")
+		try:
+			api.verify_precheckin(res.name)
+			raise AssertionError("a verified booking was verified twice")
+		except frappe.ValidationError:
+			pass
+	finally:
+		frappe.set_user("Administrator")
+
+	# once the desk has checked the card, the guest cannot quietly swap it
+	try:
+		pub.precheckin_upload_id(token, _id_photo())
+		raise AssertionError("the guest replaced the ID after it was verified")
+	except frappe.ValidationError:
+		pass
+
+	# looking is not everyone's business
+	frappe.set_user("hk@kamra.local")
+	try:
+		for fn, args in (("id_document_image", (res.name,)),
+		                 ("verify_precheckin", (res.name,)),
+		                 ("upload_id_document", (res.name, _id_photo()))):
+			try:
+				getattr(api, fn)(*args)
+				raise AssertionError(f"housekeeping was allowed to call {fn}")
+			except frappe.PermissionError:
+				pass
+	finally:
+		frappe.set_user("Administrator")
+
+	# the harness rolls the DB back but save_file wrote real bytes to disk;
+	# clean up after ourselves rather than leaving them for the runner
+	id_documents.discard_id_document(res.name)
 @check("pre-checkin: ID photo stored privately, discarded at checkout per policy")
 def t34():
 	import base64
@@ -1244,6 +1816,136 @@ def t34():
 	frappe.db.set_value("Property", P, "id_retention", "Store")
 
 
+@check("laundry rates: CSV bulk import upserts by item+service, refuses junk")
+def t35():
+	from kamra import laundry
+
+	laundry.save_laundry_rate(P, "Shirt", "Wash & Iron", 60)
+	csv_text = (
+		"Item,Service,Rate,Express Rate\n"
+		"Shirt,Wash & Iron,75,\n"          # update (blank express -> 1.5x)
+		'"Blazer, Wool",Dry Clean,300,450\n'  # create, quoted comma
+		"Cap,dry clean,90,\n"               # alias-cased service -> create
+		"Ghost,Boiling,50,\n"               # bad service -> skipped
+		"NoRate,Iron Only,,\n")             # missing rate -> skipped
+	out = laundry.import_laundry_rates(P, csv_text)
+	assert out["created"] == 2 and out["updated"] == 1, out
+	assert len(out["issues"]) == 2, out["issues"]
+	rates = {(r["item_name"], r["service_type"]): r
+	         for r in laundry.laundry_rates(P)}
+	assert rates[("Shirt", "Wash & Iron")]["rate"] == 75
+	assert rates[("Blazer, Wool", "Dry Clean")]["express_rate"] == 450
+	assert ("Cap", "Dry Clean") in rates
+
+
+@check("guest documents: address proof + staff upload + both discarded per policy")
+def t36():
+	import base64
+	from io import BytesIO
+	from PIL import Image
+	from kamra import api, public_api
+
+	def img64():
+		buf = BytesIO()
+		Image.new("RGB", (8, 8), (10, 20, 30)).save(buf, format="JPEG")
+		return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+	docroom = frappe.db.exists("Room", {"property": P, "room_number": "E104"})
+	if not docroom:
+		docroom = frappe.get_doc({
+			"doctype": "Room", "property": P, "room_number": "E104",
+			"room_type": RT,
+		}).insert(ignore_permissions=True).name
+	else:
+		frappe.db.set_value("Room", docroom, "room_type", RT)
+	g = _guest("Eval AddrProof", "+91 70000 00036")
+	res = _res(g, nowdate(), add_days(nowdate(), 1), docroom)
+	tok = frappe.generate_hash(length=32)
+	frappe.db.set_value("Reservation", res.name, "precheckin_token", tok)
+
+	# guest sends BOTH documents from the self check-in page
+	frappe.set_user("Guest")
+	try:
+		public_api.precheckin_submit(tok, "Passport", "P1234567",
+		                             id_image=img64(), address_image=img64())
+	finally:
+		frappe.set_user("Administrator")
+	assert frappe.db.get_value("Guest", g, "id_file")
+	addr1 = frappe.db.get_value("Guest", g, "address_proof_file")
+	assert addr1
+
+	# desk replaces the address proof with a newer copy - still ONE file
+	api.upload_guest_document(g, "address", img64())
+	files = frappe.get_all("File", filters={
+		"attached_to_doctype": "Guest", "attached_to_name": g,
+		"attached_to_field": "address_proof_file"}, fields=["is_private"])
+	assert len(files) == 1 and files[0].is_private == 1, files
+	card = api.registration_card(res.name)
+	assert card["guest"]["address_proof_file"], card["guest"]
+	assert card["guest"]["guest_id"] == g
+
+	# Verify & Discard wipes BOTH slots at checkout
+	frappe.db.set_value("Property", P, "id_retention", "Verify & Discard")
+	res.reload()
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	api.check_out(res.name)
+	assert not frappe.db.get_value("Guest", g, "id_file")
+	assert not frappe.db.get_value("Guest", g, "address_proof_file")
+	frappe.db.set_value("Property", P, "id_retention", "Store")
+
+
+@check("stay ledger: advance/deposit kinds, guarded refunds, actual times on GRC")
+def t37():
+	from kamra import api
+	from kamra.folio import post_room_night
+
+	lroom2 = frappe.db.exists("Room", {"property": P, "room_number": "E105"})
+	if not lroom2:
+		lroom2 = frappe.get_doc({
+			"doctype": "Room", "property": P, "room_number": "E105",
+			"room_type": RT,
+		}).insert(ignore_permissions=True).name
+	else:
+		frappe.db.set_value("Room", lroom2, "room_type", RT)
+	g = _guest("Eval Ledger", "+91 70000 00037")
+	res = _res(g, nowdate(), add_days(nowdate(), 1), lroom2)
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"})
+
+	# advance and a refundable deposit land as labelled ledger rows
+	api.add_folio_payment(folio, "UPI", 2000, kind="Advance")
+	api.add_folio_payment(folio, "Cash", 1000, kind="Security Deposit")
+	try:
+		api.add_folio_payment(folio, "Cash", 100, kind="Bribe")
+		raise AssertionError("junk payment kind accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	# refunds: reason mandatory, can't exceed what was collected
+	try:
+		api.refund_folio_payment(folio, 5000, "Cash", "too much")
+		raise AssertionError("over-refund accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+	out = api.refund_folio_payment(folio, 1000, "Cash", "deposit returned")
+	fd = frappe.get_doc("Folio", folio)
+	kinds = {(p.payment_kind, float(p.amount)) for p in fd.payments}
+	assert ("Advance", 2000.0) in kinds and ("Security Deposit", 1000.0) in kinds
+	assert ("Refund", -1000.0) in kinds, kinds
+	assert float(fd.payments_total) == 2000.0, fd.payments_total  # 2000+1000-1000
+
+	# actual times: corrected by the desk, visible on the GRC with money
+	api.set_actual_times(res.name, actual_check_in=f"{nowdate()} 07:15:00")
+	card = api.registration_card(res.name)
+	assert card["reservation"]["actual_check_in"].endswith("07:15:00")
+	assert card["money"]["folio"] == folio, card["money"]
+	assert card["money"]["advance"] == 2000.0, card["money"]
+	assert card["money"]["refunded"] == 1000.0, card["money"]
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -1266,7 +1968,10 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33, t34):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13,
+		           t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24,
+		           t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35,
+		           t36, t37, t38, t39, t40, t41, t42, t43):
 			fn()
 	finally:
 		frappe.db.commit = real_commit
