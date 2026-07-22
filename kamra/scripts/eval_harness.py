@@ -2001,6 +2001,49 @@ def t45():
 	assert _public_locale(P)["currency_symbol"] == "₹"
 
 
+@check("SEA/ME packs: Thai VAT, Malaysian SST room/F&B split, UAE TRN")
+def t46():
+	from kamra.localization import pack_for
+	from kamra.pricing import quote
+
+	fixtures = [
+		("EVAL Bangkok Hotel", "Thailand", "thailand", 7, "฿", "th-TH"),
+		("EVAL KL Hotel", "Malaysia", "malaysia", 8, "RM", "ms-MY"),
+		("EVAL Dubai Hotel", "United Arab Emirates", "uae", 5,
+		 "AED ", "en-AE"),
+	]
+	for pname, country, mod, rate, symbol, loc_code in fixtures:
+		if not frappe.db.exists("Property", pname):
+			frappe.get_doc({
+				"doctype": "Property", "property_name": pname,
+				"city": "Eval", "country": country,
+			}).insert(ignore_permissions=True)
+		rt = frappe.get_doc({
+			"doctype": "Room Type", "property": pname,
+			"room_type_code": "STD", "room_type_name": "Standard",
+			"base_price": 4000, "base_occupancy": 2,
+			"adults_capacity": 2, "children_capacity": 1,
+		}).insert(ignore_permissions=True).name
+
+		pack = pack_for(pname)
+		assert pack.__name__.endswith(mod), (pname, pack.__name__)
+		# flat default rate, no Indian slab switching by tariff
+		q = quote(pname, rt, "2031-06-01", "2031-06-02", 2, 0)
+		assert q["nightly"][0]["gst_rate"] == rate, (pname, q["nightly"])
+		loc = pack.locale(frappe.get_doc("Property", pname))
+		assert loc["currency_symbol"] == symbol, (pname, loc)
+		assert loc["locale"] == loc_code, (pname, loc)
+
+	# Malaysia is the one seam country where F&B differs from rooms
+	from kamra.localization import malaysia
+	assert malaysia.fnb_tax_rate("EVAL KL Hotel") == 6.0
+	ctx = malaysia.invoice_context(frappe.get_doc("Property", "EVAL KL Hotel"))
+	assert ctx["tax_id_label"] == "SST Registration No.", ctx
+	from kamra.localization import uae
+	assert uae.invoice_context(
+		frappe.get_doc("Property", "EVAL Dubai Hotel"))["tax_id_label"] == "TRN"
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -2026,7 +2069,7 @@ def execute():
 		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13,
 		           t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24,
 		           t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35,
-		           t36, t37, t38, t39, t40, t41, t42, t43, t44, t45):
+		           t36, t37, t38, t39, t40, t41, t42, t43, t44, t45, t46):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

@@ -255,7 +255,8 @@ def setup_property(payload):
 			"extra_adult_price": rt.get("extra_adult_price", 0),
 			"adults_capacity": rt.get("adults", 2),
 			"children_capacity": rt.get("children", 1),
-			"tax_percent": rt.get("tax_percent", 5),
+			# unset = the country pack's standard rate, not an Indian slab
+			"tax_percent": rt.get("tax_percent"),
 		})
 		doc.insert()
 		rt_by_code[rt["code"]] = doc.name

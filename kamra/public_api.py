@@ -615,7 +615,8 @@ def qr_order(outlet: str, items, room: str | None = None,
 @rate_limit(limit=10, seconds=3600)
 def hosting_enquiry(full_name: str, email: str, phone: str = "",
                     property_name: str = "", rooms: int = 0, city: str = "",
-                    message: str = ""):
+                    message: str = "", country: str = "",
+                    interest: str = ""):
 	"""Kamra Cloud hosting enquiry from kamrapms.com. Stored first (a lead is
 	never lost even without SMTP), then a best-effort email to the team."""
 	if not (full_name or "").strip() or not (email or "").strip():
@@ -628,6 +629,11 @@ def hosting_enquiry(full_name: str, email: str, phone: str = "",
 		"property_name": (property_name or "").strip()[:140] or None,
 		"rooms": int(rooms or 0),
 		"city": (city or "").strip()[:80] or None,
+		"country": (country or "").strip()[:80] or None,
+		"interest": (interest or "").strip()[:40]
+		            if (interest or "").strip() in
+		            ("Hosting", "Implementation", "Support AMC", "Partnership")
+		            else None,
 		"message": (message or "").strip()[:2000] or None,
 		"status": "New",
 	})
@@ -636,7 +642,7 @@ def hosting_enquiry(full_name: str, email: str, phone: str = "",
 	try:
 		frappe.sendmail(
 			recipients=["hello@kamrapms.com"],
-			subject=f"Kamra Cloud enquiry: {doc.full_name}"
+			subject=f"Kamra {doc.interest or 'Cloud'} enquiry: {doc.full_name}"
 			        + (f" ({doc.property_name})" if doc.property_name else ""),
 			message=(
 				f"<p><b>{doc.full_name}</b> &lt;{doc.email}&gt;"

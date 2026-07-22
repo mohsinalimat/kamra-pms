@@ -48,6 +48,9 @@ required_apps = ["payments"]
 kamra_localization = {
 	"India": "kamra.localization.india",
 	"Indonesia": "kamra.localization.indonesia",
+	"Thailand": "kamra.localization.thailand",
+	"Malaysia": "kamra.localization.malaysia",
+	"United Arab Emirates": "kamra.localization.uae",
 }
 
 # Served single-page app

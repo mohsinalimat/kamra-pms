@@ -141,8 +141,17 @@ def registry(property: str):
 				        "NPWP on invoices, Rupiah. Community-contributed "
 				        "(issue #4).",
 				        detail="Included"),
-				_bench("United Arab Emirates", "UAE VAT, FTA reports.", None,
-				       status="planned"),
+				_module("Thailand",
+				        "7% VAT, Thai tax invoice labels, Baht.",
+				        detail="Included"),
+				_module("Malaysia",
+				        "SST 8% rooms / 6% F&B, SST registration no., "
+				        "Ringgit. Tourism Tax as folio line.",
+				        detail="Included"),
+				_module("United Arab Emirates",
+				        "5% VAT, TRN tax invoices, Dirham. Municipality "
+				        "fee & Tourism Dirham as folio lines.",
+				        detail="Included"),
 				_bench("Saudi Arabia", "ZATCA Phase 2, QR, e-invoice.", None,
 				       status="planned"),
 				_bench("United Kingdom", "VAT, Making Tax Digital.", None,
