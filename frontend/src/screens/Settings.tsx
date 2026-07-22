@@ -177,7 +177,7 @@ const PROPERTY_SPECS: Spec[] = [
   {
     field: "country",
     label: "Country",
-    hint: "Selects the tax & invoicing pack. India today; more via the Marketplace.",
+    hint: "Selects the tax & invoicing pack. India and Indonesia today; more via the Marketplace.",
   },
   { field: "phone", label: "Phone" },
   { field: "email", label: "Email" },

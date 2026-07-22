@@ -47,6 +47,7 @@ required_apps = ["payments"]
 # kamra_uae APP declares its own to claim "United Arab Emirates".
 kamra_localization = {
 	"India": "kamra.localization.india",
+	"Indonesia": "kamra.localization.indonesia",
 }
 
 # Served single-page app

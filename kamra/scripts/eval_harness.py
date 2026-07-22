@@ -1946,6 +1946,44 @@ def t37():
 	assert card["money"]["refunded"] == 1000.0, card["money"]
 
 
+@check("Indonesia pack: PBJT flat tax, NPWP labels, Rupiah locale")
+def t44():
+	from kamra.localization import pack_for
+	from kamra.pricing import quote
+
+	P4 = "EVAL Bali Hotel"
+	if not frappe.db.exists("Property", P4):
+		frappe.get_doc({
+			"doctype": "Property", "property_name": P4, "city": "Ubud",
+			"country": "Indonesia",
+		}).insert(ignore_permissions=True)
+	rt = frappe.get_doc({
+		"doctype": "Room Type", "property": P4, "room_type_code": "VIL",
+		"room_type_name": "Villa", "base_price": 1500000,
+		"base_occupancy": 2, "adults_capacity": 3, "children_capacity": 2,
+		"tax_percent": 10,
+	}).insert(ignore_permissions=True).name
+
+	pack = pack_for(P4)
+	assert pack.__name__.endswith("indonesia"), pack.__name__
+
+	# flat PBJT: same rate whatever the tariff (no Indian slab switching)
+	q = quote(P4, rt, "2031-05-01", "2031-05-02", 2, 0)
+	assert q["nightly"][0]["gst_rate"] == 10, q["nightly"]
+	q2 = quote(P4, rt, "2031-05-01", "2031-05-02", 3, 1)
+	assert q2["nightly"][0]["gst_rate"] == 10, q2["nightly"]
+	# a region with a different PBJT sets it on the room type
+	frappe.db.set_value("Room Type", rt, "tax_percent", 8)
+	q3 = quote(P4, rt, "2031-05-01", "2031-05-02", 2, 0)
+	assert q3["nightly"][0]["gst_rate"] == 8, q3["nightly"]
+
+	prop = frappe.get_doc("Property", P4)
+	ctx = pack.invoice_context(prop)
+	assert ctx["tax_id_label"] == "NPWP" and ctx["split"][0][0] == "pb1", ctx
+	loc = pack.locale(prop)
+	assert loc["currency_symbol"] == "Rp" and loc["locale"] == "id-ID", loc
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -1971,7 +2009,7 @@ def execute():
 		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13,
 		           t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24,
 		           t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35,
-		           t36, t37, t38, t39, t40, t41, t42, t43):
+		           t36, t37, t38, t39, t40, t41, t42, t43, t44):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

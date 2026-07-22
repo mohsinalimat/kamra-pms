@@ -136,6 +136,11 @@ def registry(property: str):
 			"cards": [
 				_module("India", "GST slabs, SAC, GSTIN, GSTR-1, e-invoice.",
 				        detail="Included"),
+				_module("Indonesia",
+				        "PB1/PBJT regional hotel tax (flat, per-region rate), "
+				        "NPWP on invoices, Rupiah. Community-contributed "
+				        "(issue #4).",
+				        detail="Included"),
 				_bench("United Arab Emirates", "UAE VAT, FTA reports.", None,
 				       status="planned"),
 				_bench("Saudi Arabia", "ZATCA Phase 2, QR, e-invoice.", None,
