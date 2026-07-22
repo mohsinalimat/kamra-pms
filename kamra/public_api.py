@@ -200,6 +200,7 @@ def precheckin_info(token: str):
 			"email": guest.email,
 			"id_type": guest.id_type,
 			"has_id_file": bool(guest.get("id_file")),
+			"has_address_file": bool(guest.get("address_proof_file")),
 			"nationality": guest.nationality,
 		},
 	}
@@ -207,10 +208,12 @@ def precheckin_info(token: str):
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=20, seconds=3600)
-def _save_id_image(guest: str, data_url: str) -> str | None:
-	"""Store the guest's ID photo as a PRIVATE file attached to their
-	profile (upload or camera capture from the pre-check-in page). Replaces
-	any earlier copy; deleted at checkout under Verify & Discard."""
+def _save_id_image(guest: str, data_url: str,
+                   field: str = "id_file") -> str | None:
+	"""Store a guest document (ID or address proof) as a PRIVATE file
+	attached to their profile (upload or camera capture). Replaces any
+	earlier copy in the same slot; deleted at checkout under
+	Verify & Discard."""
 	import base64
 	import re as _re
 	m = _re.match(r"^data:image/(jpeg|jpg|png|webp);base64,(.+)$",
@@ -223,15 +226,15 @@ def _save_id_image(guest: str, data_url: str) -> str | None:
 	# replace, never accumulate: one current ID document per guest
 	for f in frappe.get_all("File", filters={
 			"attached_to_doctype": "Guest", "attached_to_name": guest,
-			"attached_to_field": "id_file"}, pluck="name"):
+			"attached_to_field": field}, pluck="name"):
 		frappe.delete_doc("File", f, force=True, ignore_permissions=True)
 	ext = "jpg" if m.group(1) in ("jpeg", "jpg") else m.group(1)
 	fdoc = frappe.get_doc({
 		"doctype": "File",
-		"file_name": f"id-{guest}.{ext}",
+		"file_name": f"{'address' if field == 'address_proof_file' else 'id'}-{guest}.{ext}",
 		"attached_to_doctype": "Guest",
 		"attached_to_name": guest,
-		"attached_to_field": "id_file",
+		"attached_to_field": field,
 		"is_private": 1,
 		"content": content,
 	}).insert(ignore_permissions=True)
@@ -243,7 +246,7 @@ def precheckin_submit(token: str, id_type: str, id_number: str,
                       address_line: str = "", city: str = "",
                       eta: str = "", special_requests: str = "",
                       signature: str = "", consent: int = 0,
-                      id_image: str = ""):
+                      id_image: str = "", address_image: str = ""):
 	"""Guest completes pre-arrival check-in and signs the registration card
 	(PRD FR-20 - details + declaration + e-signature; the signed card becomes
 	the paperless GRC the desk views at arrival). The guest can attach a
@@ -260,6 +263,9 @@ def precheckin_submit(token: str, id_type: str, id_number: str,
 		frappe.throw("Please accept the registration declaration to sign.")
 
 	id_file = _save_id_image(res.guest, id_image) if id_image else None
+	addr_file = (_save_id_image(res.guest, address_image,
+	                            "address_proof_file")
+	             if address_image else None)
 	frappe.db.set_value("Guest", res.guest, {
 		"id_type": id_type,
 		"id_number": id_number.strip(),
@@ -268,6 +274,7 @@ def precheckin_submit(token: str, id_type: str, id_number: str,
 		"address_line": address_line or None,
 		"city": city or None,
 		**({"id_file": id_file} if id_file else {}),
+		**({"address_proof_file": addr_file} if addr_file else {}),
 	})
 	frappe.db.set_value("Reservation", res.name, {
 		"precheckin_status": "Submitted",

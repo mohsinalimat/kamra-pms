@@ -5,7 +5,7 @@ outline: 2
 # REST API reference
 
 Every endpoint below is a whitelisted function — the same governed layer
-the UI and the AI use. **151 endpoints**, generated from the source
+the UI and the AI use. **153 endpoints**, generated from the source
 (`docs-site/gen_api.py`), so this page always matches the code.
 
 ## Calling convention
@@ -114,16 +114,6 @@ it (auto_price off); others are priced by the engine.
 | --- | --- | --- |
 | `property` | yes |  |
 | `bookings` | yes |  |
-
-### `kamra.api.registration_card`
-
-**GET/POST** · roles: `Front Desk`, `Kamra Agent`
-
-Everything the printed GRC (guest registration card) needs.
-
-| Param | Required | Default |
-| --- | --- | --- |
-| `reservation` | yes |  |
 
 ### `kamra.api.cash_summary`
 
@@ -321,6 +311,11 @@ Folio for a reservation - opens one if the guest is checked in.
 
 **GET/POST** · roles: `Finance`, `Front Desk`, `Kamra Agent`
 
+Record money received on the stay ledger. kind labels WHY it came
+in - Payment (against the bill), Advance (collected before/at
+check-in) or Security Deposit (held, refundable). Refunds go through
+refund_folio_payment so they can never be entered by accident.
+
 | Param | Required | Default |
 | --- | --- | --- |
 | `folio` | yes |  |
@@ -328,6 +323,37 @@ Folio for a reservation - opens one if the guest is checked in.
 | `amount` | yes |  |
 | `reference` | no | `None` |
 | `pin` | no | `None` |
+| `kind` | no | `'Payment'` |
+
+### `kamra.api.refund_folio_payment`
+
+**POST** · roles: `Finance`, `Front Desk`, `Kamra Agent`
+
+Give money back on an open folio - a held security deposit at
+checkout, or an over-collected advance. Stored as a negative ledger
+row so every balance still sums exactly; a reason is mandatory.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `folio` | yes |  |
+| `amount` | yes |  |
+| `mode` | yes |  |
+| `reason` | yes |  |
+| `pin` | no | `None` |
+
+### `kamra.api.set_actual_times`
+
+**POST** · roles: `Front Desk`, `Kamra Agent`
+
+Correct the recorded arrival/departure moments - early check-ins
+and late checkouts should show what actually happened, not just when
+the button was pressed. Early/late charges stay explicit folio lines.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `reservation` | yes |  |
+| `actual_check_in` | no | `None` |
+| `actual_check_out` | no | `None` |
 
 ### `kamra.api.void_folio_charge`
 
@@ -683,6 +709,20 @@ booker and the actions currently available. Powers the reservation drawer.
 | --- | --- | --- |
 | `reservation` | yes |  |
 | `room` | no | `None` |
+
+### `kamra.api.upload_guest_document`
+
+**POST** · roles: `Front Desk`, `Kamra Agent`
+
+The desk captures or replaces a guest's document while preparing
+the GRC - walk-ins, or a newer copy over last visit's. kind is 'id'
+or 'address'; stored privately, one current copy per slot.
+
+| Param | Required | Default |
+| --- | --- | --- |
+| `guest` | yes |  |
+| `kind` | yes |  |
+| `image` | yes |  |
 
 ### `kamra.api.cancellation_preview`
 

@@ -1266,6 +1266,114 @@ def t35():
 	assert ("Cap", "Dry Clean") in rates
 
 
+@check("guest documents: address proof + staff upload + both discarded per policy")
+def t36():
+	import base64
+	from io import BytesIO
+	from PIL import Image
+	from kamra import api, public_api
+
+	def img64():
+		buf = BytesIO()
+		Image.new("RGB", (8, 8), (10, 20, 30)).save(buf, format="JPEG")
+		return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+	docroom = frappe.db.exists("Room", {"property": P, "room_number": "E104"})
+	if not docroom:
+		docroom = frappe.get_doc({
+			"doctype": "Room", "property": P, "room_number": "E104",
+			"room_type": RT,
+		}).insert(ignore_permissions=True).name
+	else:
+		frappe.db.set_value("Room", docroom, "room_type", RT)
+	g = _guest("Eval AddrProof", "+91 70000 00036")
+	res = _res(g, nowdate(), add_days(nowdate(), 1), docroom)
+	tok = frappe.generate_hash(length=32)
+	frappe.db.set_value("Reservation", res.name, "precheckin_token", tok)
+
+	# guest sends BOTH documents from the self check-in page
+	frappe.set_user("Guest")
+	try:
+		public_api.precheckin_submit(tok, "Passport", "P1234567",
+		                             id_image=img64(), address_image=img64())
+	finally:
+		frappe.set_user("Administrator")
+	assert frappe.db.get_value("Guest", g, "id_file")
+	addr1 = frappe.db.get_value("Guest", g, "address_proof_file")
+	assert addr1
+
+	# desk replaces the address proof with a newer copy - still ONE file
+	api.upload_guest_document(g, "address", img64())
+	files = frappe.get_all("File", filters={
+		"attached_to_doctype": "Guest", "attached_to_name": g,
+		"attached_to_field": "address_proof_file"}, fields=["is_private"])
+	assert len(files) == 1 and files[0].is_private == 1, files
+	card = api.registration_card(res.name)
+	assert card["guest"]["address_proof_file"], card["guest"]
+	assert card["guest"]["guest_id"] == g
+
+	# Verify & Discard wipes BOTH slots at checkout
+	frappe.db.set_value("Property", P, "id_retention", "Verify & Discard")
+	res.reload()
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	api.check_out(res.name)
+	assert not frappe.db.get_value("Guest", g, "id_file")
+	assert not frappe.db.get_value("Guest", g, "address_proof_file")
+	frappe.db.set_value("Property", P, "id_retention", "Store")
+
+
+@check("stay ledger: advance/deposit kinds, guarded refunds, actual times on GRC")
+def t37():
+	from kamra import api
+	from kamra.folio import post_room_night
+
+	lroom2 = frappe.db.exists("Room", {"property": P, "room_number": "E105"})
+	if not lroom2:
+		lroom2 = frappe.get_doc({
+			"doctype": "Room", "property": P, "room_number": "E105",
+			"room_type": RT,
+		}).insert(ignore_permissions=True).name
+	else:
+		frappe.db.set_value("Room", lroom2, "room_type", RT)
+	g = _guest("Eval Ledger", "+91 70000 00037")
+	res = _res(g, nowdate(), add_days(nowdate(), 1), lroom2)
+	res.status = "Checked In"
+	res.save(ignore_permissions=True)
+	folio = frappe.db.get_value(
+		"Folio", {"reservation": res.name, "folio_type": "Guest"})
+
+	# advance and a refundable deposit land as labelled ledger rows
+	api.add_folio_payment(folio, "UPI", 2000, kind="Advance")
+	api.add_folio_payment(folio, "Cash", 1000, kind="Security Deposit")
+	try:
+		api.add_folio_payment(folio, "Cash", 100, kind="Bribe")
+		raise AssertionError("junk payment kind accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+
+	# refunds: reason mandatory, can't exceed what was collected
+	try:
+		api.refund_folio_payment(folio, 5000, "Cash", "too much")
+		raise AssertionError("over-refund accepted")
+	except frappe.exceptions.ValidationError:
+		pass
+	out = api.refund_folio_payment(folio, 1000, "Cash", "deposit returned")
+	fd = frappe.get_doc("Folio", folio)
+	kinds = {(p.payment_kind, float(p.amount)) for p in fd.payments}
+	assert ("Advance", 2000.0) in kinds and ("Security Deposit", 1000.0) in kinds
+	assert ("Refund", -1000.0) in kinds, kinds
+	assert float(fd.payments_total) == 2000.0, fd.payments_total  # 2000+1000-1000
+
+	# actual times: corrected by the desk, visible on the GRC with money
+	api.set_actual_times(res.name, actual_check_in=f"{nowdate()} 07:15:00")
+	card = api.registration_card(res.name)
+	assert card["reservation"]["actual_check_in"].endswith("07:15:00")
+	assert card["money"]["folio"] == folio, card["money"]
+	assert card["money"]["advance"] == 2000.0, card["money"]
+	assert card["money"]["refunded"] == 1000.0, card["money"]
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -1288,7 +1396,7 @@ def execute():
 	frappe.db.savepoint("eval_start")
 	try:
 		RT, ROOM = setup()
-		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35):
+		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35, t36, t37):
 			fn()
 	finally:
 		frappe.db.commit = real_commit

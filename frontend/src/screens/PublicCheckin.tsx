@@ -28,6 +28,57 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
+function DocCapture(props: {
+  title: string
+  note: string
+  value: string
+  onChange: (v: string) => void
+  onFile: (f: File) => Promise<string>
+  hasExisting?: boolean
+}) {
+  const { title, note, value, onChange, onFile, hasExisting } = props
+  return (
+    <div className="rounded-xl border border-zinc-200 p-3">
+      <span className="block text-sm font-medium text-zinc-600">{title}</span>
+      <p className="mb-2 mt-0.5 text-xs text-zinc-400">{note}</p>
+      {hasExisting && !value && (
+        <p className="mb-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs text-emerald-800">
+          ✓ We already have this from your last visit — we'll use it.
+          Add a photo below only to replace it with a newer one.
+        </p>
+      )}
+      {value ? (
+        <div className="flex items-center gap-3">
+          <img src={value} alt={title} className="h-20 rounded-lg border border-zinc-200 object-cover" />
+          <button type="button" className="text-sm font-medium text-rose-600 hover:underline"
+            onClick={() => onChange("")}>
+            Remove & retake
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <label className="cursor-pointer rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">
+            Take photo
+            <input type="file" accept="image/*" capture="environment" className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                if (f) onChange(await onFile(f))
+              }} />
+          </label>
+          <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700">
+            Upload image
+            <input type="file" accept="image/*" className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                if (f) onChange(await onFile(f))
+              }} />
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const inputCls =
   "w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-base " +
   "focus:outline-2 focus:outline-offset-1 focus:outline-brand-600"
@@ -61,6 +112,7 @@ interface Info {
     email: string | null
     id_type: string | null
     has_id_file?: boolean
+    has_address_file?: boolean
     nationality: string | null
   }
 }
@@ -79,6 +131,7 @@ export default function PublicCheckin() {
   })
   const [signature, setSignature] = useState("")
   const [idImage, setIdImage] = useState("") // data-URL of the ID photo
+  const [addrImage, setAddrImage] = useState("") // data-URL of the address proof
   const [consent, setConsent] = useState(false)
 
   useEffect(() => {
@@ -104,6 +157,7 @@ export default function PublicCheckin() {
       await call("kamra.public_api.precheckin_submit", {
         token, ...form, signature, consent: consent ? 1 : 0,
         id_image: idImage || "",
+        address_image: addrImage || "",
       })
       setDone(true)
     } catch {
@@ -196,50 +250,25 @@ export default function PublicCheckin() {
               </label>
             </div>
 
-            {/* photo of the ID: camera on phones, file picker anywhere */}
-            <div className="rounded-xl border border-zinc-200 p-3">
-              <span className="block text-sm font-medium text-zinc-600">
-                Photo of your {form.id_type || "ID"}
-              </span>
-              <p className="mb-2 mt-0.5 text-xs text-zinc-400">
-                Stored privately, shown only to the front desk
-                {info?.property?.id_retention === "Verify & Discard"
-                  ? " — and deleted after checkout." : "."}
-              </p>
-              {idImage ? (
-                <div className="flex items-center gap-3">
-                  <img src={idImage} alt="Your ID" className="h-20 rounded-lg border border-zinc-200 object-cover" />
-                  <button type="button" className="text-sm font-medium text-rose-600 hover:underline"
-                    onClick={() => setIdImage("")}>
-                    Remove & retake
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  <label className="cursor-pointer rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">
-                    Take photo
-                    <input type="file" accept="image/*" capture="environment" className="hidden"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0]
-                        if (f) setIdImage(await fileToDataUrl(f))
-                      }} />
-                  </label>
-                  <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700">
-                    Upload image
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0]
-                        if (f) setIdImage(await fileToDataUrl(f))
-                      }} />
-                  </label>
-                  {info?.guest?.has_id_file && (
-                    <span className="self-center text-xs font-medium text-emerald-700">
-                      ✓ Already on file — add a new one only to replace it
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
+            <DocCapture
+              title={`Photo of your ${form.id_type || "ID"}`}
+              note={"Stored privately, shown only to the front desk" +
+                (info?.property?.id_retention === "Verify & Discard"
+                  ? " — and deleted after checkout." : ".")}
+              value={idImage}
+              onChange={setIdImage}
+              onFile={fileToDataUrl}
+              hasExisting={info?.guest?.has_id_file}
+            />
+            <DocCapture
+              title="Address proof (optional)"
+              note="Only if your address proof is a different document from your ID."
+              value={addrImage}
+              onChange={setAddrImage}
+              onFile={fileToDataUrl}
+              hasExisting={info?.guest?.has_address_file}
+            />
+
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-zinc-600">Email</span>
