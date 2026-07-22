@@ -8,7 +8,8 @@ export default defineConfig({
   cleanUrls: true,
   head: [["link", { rel: "icon", type: "image/svg+xml", href: "/docs/kamra-mark.svg" }]],
   themeConfig: {
-    logo: "/kamra-mark.svg",
+    logo: { src: "/kamra-horizontal.svg", height: 28 },
+    siteTitle: false,
     nav: [
       { text: "Website", link: "https://kamrapms.com" },
       { text: "Live demo", link: "https://demo.kamrapms.com" },
