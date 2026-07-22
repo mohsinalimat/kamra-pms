@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom"
 import { call } from "../lib/api"
 import { Button } from "../components/ui/button"
 import { SignaturePad } from "../components/SignaturePad"
+import { IdDocumentField } from "../components/IdDocumentField"
 import { GuestLaundryCard } from "./laundry/GuestLaundryCard"
 
 
@@ -94,7 +95,7 @@ interface Info {
     pets_policy: string | null
     children_policy: string | null
     extra_bed_policy: string | null
-    id_retention?: string | null
+    id_retention: string
   }
   stay: {
     reservation: string
@@ -114,6 +115,8 @@ interface Info {
     has_id_file?: boolean
     has_address_file?: boolean
     nationality: string | null
+    has_id_document: boolean
+    id_document_on: string
   }
 }
 
@@ -133,6 +136,7 @@ export default function PublicCheckin() {
   const [idImage, setIdImage] = useState("") // data-URL of the ID photo
   const [addrImage, setAddrImage] = useState("") // data-URL of the address proof
   const [consent, setConsent] = useState(false)
+  const [idUploaded, setIdUploaded] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -145,6 +149,10 @@ export default function PublicCheckin() {
           id_type: i.guest.id_type || "Aadhaar",
           nationality: i.guest.nationality ?? "Indian",
         }))
+        // a boolean, never a URL - the guest can't be shown their own photo
+        // back (Frappe refuses a Guest session any private file), so after a
+        // reload this is all we can honestly say
+        setIdUploaded(i.guest.has_id_document)
         if (i.stay.status === "Submitted") setDone(true)
       })
       .catch(() => setError("This check-in link isn't valid. Please contact the hotel."))
@@ -250,16 +258,25 @@ export default function PublicCheckin() {
               </label>
             </div>
 
-            <DocCapture
-              title={`Photo of your ${form.id_type || "ID"}`}
-              note={"Stored privately, shown only to the front desk" +
-                (info?.property?.id_retention === "Verify & Discard"
-                  ? " — and deleted after checkout." : ".")}
-              value={idImage}
-              onChange={setIdImage}
-              onFile={fileToDataUrl}
-              hasExisting={info?.guest?.has_id_file}
+            {/* Optional, and it stays optional: the submit button below never
+                mentions this. A guest on a locked-down phone or a bad lobby
+                connection must still be able to pre-register - gating here
+                would just move the queue back to the desk. */}
+            <IdDocumentField
+              method="kamra.public_api.precheckin_upload_id"
+              params={{ token }}
+              uploaded={idUploaded}
+              onUploaded={() => setIdUploaded(true)}
+              label="Add a photo of your ID (optional)"
+              hint="It speeds up arrival. Bring the original card either way."
             />
+            <p className="-mt-1 text-xs text-zinc-500">
+              {p.id_retention === "Verify & Discard"
+                ? "Your ID photo is used only to confirm your identity at arrival, and is permanently deleted when you check out. Only hotel staff can see it."
+                : "Your ID photo is kept with the guest register the hotel is required by law to maintain. Only hotel staff can see it."}
+              {form.id_type === "Aadhaar" && " A masked Aadhaar (last 4 digits showing) is fine."}
+            </p>
+
             <DocCapture
               title="Address proof (optional)"
               note="Only if your address proof is a different document from your ID."
@@ -345,9 +362,14 @@ export default function PublicCheckin() {
               <span className="mb-1.5 block text-sm font-medium text-zinc-600">
                 Registration card - your signature
               </span>
+              {/* One instrument, widened - not a second checkbox. The notice
+                  has to cover the ID photo before it's collected, but adding
+                  another gate to the form whose completion rate is the whole
+                  point would cost more than it protects. */}
               <p className="mb-2 text-xs text-zinc-500">
-                I confirm the details above are correct and agree to the hotel's
-                registration terms and house rules.
+                I confirm the details above are correct, agree to the hotel's
+                registration terms and house rules, and consent to the hotel
+                holding a copy of my ID for this stay.
               </p>
               <SignaturePad onChange={setSignature} />
               <label className="mt-2 flex items-start gap-2 text-xs text-zinc-600">
