@@ -2044,6 +2044,29 @@ def t46():
 		frappe.get_doc("Property", "EVAL Dubai Hotel"))["tax_id_label"] == "TRN"
 
 
+@check("generic pack: currency symbol comes from the Currency master")
+def t47():
+	from kamra.localization import pack_for
+
+	if not frappe.db.exists("Currency", "GBP"):
+		frappe.get_doc({"doctype": "Currency", "currency_name": "GBP",
+		                "symbol": "£", "enabled": 1}).insert(
+			ignore_permissions=True)
+	P5 = "EVAL London Hotel"
+	if not frappe.db.exists("Property", P5):
+		frappe.get_doc({"doctype": "Property", "property_name": P5,
+		                "city": "London", "country": "United Kingdom",
+		                "currency": "GBP"}).insert(ignore_permissions=True)
+
+	pack = pack_for(P5)
+	assert pack.__name__.endswith("generic"), pack.__name__
+	loc = pack.locale(frappe.get_doc("Property", P5))
+	sym = loc["currency_symbol"]
+	# the master's symbol when it has one, the code itself when it doesn't -
+	# never again a bare unlabelled amount
+	assert sym and ("£" in sym or sym.strip() == "GBP"), loc
+
+
 @check("ticket SLA: priority sets due window")
 def t12():
 	from frappe.utils import get_datetime, now_datetime, time_diff_in_seconds
@@ -2069,7 +2092,7 @@ def execute():
 		for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13,
 		           t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24,
 		           t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35,
-		           t36, t37, t38, t39, t40, t41, t42, t43, t44, t45, t46):
+		           t36, t37, t38, t39, t40, t41, t42, t43, t44, t45, t46, t47):
 			fn()
 	finally:
 		frappe.db.commit = real_commit
